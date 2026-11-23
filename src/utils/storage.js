@@ -9,6 +9,9 @@ import {
 // Clé unique utilisée dans le navigateur pour MiniGest
 const CLE_STOCKAGE = 'minigest_clients';
 
+// Clé utilisée pour mémoriser si le tableau de bord est affiché ou masqué
+const CLE_DASHBOARD_VISIBLE = 'minigest_dashboard_visible';
+
 // Migre les clients déjà enregistrés sans jamais en supprimer un seul :
 // - normalise le numéro de téléphone si possible (sinon conservé tel quel)
 // - ajoute le statut "Client" et une note vide aux anciens clients sans ces champs
@@ -94,5 +97,27 @@ export function sauvegarderClients(clients) {
     localStorage.setItem(CLE_STOCKAGE, JSON.stringify(clients));
   } catch {
     // Évite un plantage si le stockage du navigateur est plein ou bloqué
+  }
+}
+
+// Lit la préférence d'affichage du tableau de bord dans localStorage (affiché par défaut)
+export function chargerVisibiliteDashboard() {
+  try {
+    const valeur = localStorage.getItem(CLE_DASHBOARD_VISIBLE);
+    if (valeur === 'false') {
+      return false;
+    }
+    return true;
+  } catch {
+    return true;
+  }
+}
+
+// Enregistre la préférence d'affichage du tableau de bord dans localStorage
+export function sauvegarderVisibiliteDashboard(estVisible) {
+  try {
+    localStorage.setItem(CLE_DASHBOARD_VISIBLE, String(Boolean(estVisible)));
+  } catch {
+    // Évite un plantage si le stockage du navigateur est bloqué
   }
 }

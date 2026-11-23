@@ -6,6 +6,13 @@
 
 ## Fonctionnalités
 
+- **Tableau de bord d'activité** : section repliable placée entre l'en-tête et le formulaire, avec un bouton **Masquer / Afficher le tableau de bord** dont le choix est mémorisé dans `localStorage` (`minigest_dashboard_visible`). Toutes les statistiques sont calculées à la volée (valeurs dérivées) sur **tous** les clients, indépendamment de la recherche ou du filtre actif :
+  - **4 cartes d'indicateurs** : *Total clients*, *Nouveaux ce mois* (calculé en heure locale), *Prospects* et *Inactifs*.
+  - **3 graphiques en barres 100 % CSS** (chaque barre affichant aussi son nombre en texte) :
+    - *Répartition par statut* (`Prospect` cyan, `Client` vert, `Inactif` gris) avec effectif et pourcentage.
+    - *Top 5 des villes* avec regroupement insensible aux majuscules et aux accents (`THIES`, `Thies` et `Thiès` → `Thiès`), tri alphabétique en cas d'égalité et regroupement des villes vides sous `Non renseignée`.
+    - *Nouveaux clients sur les 6 derniers mois* en barres verticales (heure locale), mois sans ajout affiché à `0`.
+  - Message d'invite lorsque la liste est vide et affichage responsive sous `600 px` (cartes sur 2 colonnes et graphiques empilés).
 - **Ajout d'un client** : formulaire contrôlé avec les champs *Nom*, *Prénom*, *Téléphone*, *Email*, *Ville*, *Statut* (`Prospect`, `Client`, `Inactif` — `Client` par défaut) et *Note* (texte libre facultatif avec compteur `X / 500`), génération automatique d'un identifiant unique (`crypto.randomUUID`) et de la date d'ajout.
 - **Modification d'un client** : bouton bleu marine **Modifier** sur chaque ligne pour pré-remplir le formulaire (y compris le statut et la note), surligner le client en cours d'édition, modifier ses informations (tout en conservant son identifiant, sa date d'ajout et en l'autorisant à garder son propre numéro de téléphone) ou annuler l'édition. Après un ajout ou une modification, si le client ne correspond pas au filtre de statut actif, le filtre revient automatiquement sur **Tous** pour qu'il reste visible.
 - **Validation et normalisation des données** :
@@ -96,12 +103,14 @@ minigest/
     ├── App.css                  # Styles globaux et affichage responsive
     ├── components/
     │   ├── Header.jsx           # En-tête avec titre et compteur total de clients
+    │   ├── Dashboard.jsx        # Tableau de bord d'activité (indicateurs et graphiques CSS)
     │   ├── ClientForm.jsx       # Formulaire contrôlé d'ajout avec validation
     │   ├── SearchBar.jsx        # Barre de recherche et compteur de résultats
     │   ├── ClientList.jsx       # Tableau trié des clients (ou message si vide)
     │   └── ClientRow.jsx        # Ligne (ou carte mobile) d'un client + contact, édition, suppression
     └── utils/
         ├── csv.js               # Export et import CSV compatibles Excel (sans bibliothèque externe)
+        ├── statistiques.js      # Fonctions pures de calcul des indicateurs et graphiques
         ├── storage.js           # Lecture, migration et écriture dans localStorage
         ├── telephone.js         # Normalisation, formatage et lien WhatsApp des numéros de téléphone
         └── validation.js        # Validation et mise en forme des champs client
@@ -111,4 +120,4 @@ minigest/
 
 ## Auteur
 
-**Patrick Kassi** — *MiniGest v1.5*
+**Patrick Kassi** — *MiniGest v1.6*

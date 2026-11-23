@@ -2,10 +2,16 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 import Header from './components/Header.jsx';
+import Dashboard from './components/Dashboard.jsx';
 import ClientForm from './components/ClientForm.jsx';
 import SearchBar from './components/SearchBar.jsx';
 import ClientList from './components/ClientList.jsx';
-import { chargerClients, sauvegarderClients } from './utils/storage.js';
+import {
+  chargerClients,
+  sauvegarderClients,
+  chargerVisibiliteDashboard,
+  sauvegarderVisibiliteDashboard,
+} from './utils/storage.js';
 import { validerClient } from './utils/validation.js';
 import {
   formaterTelephone,
@@ -44,10 +50,20 @@ function App() {
   // State pour afficher le bilan (ou l'erreur) après un import CSV
   const [bilanImport, setBilanImport] = useState(null);
 
+  // State pour afficher ou masquer le tableau de bord (mémorisé dans localStorage)
+  const [dashboardVisible, setDashboardVisible] = useState(() =>
+    chargerVisibiliteDashboard()
+  );
+
   // Sauvegarde automatiquement dans localStorage à chaque modification de la liste
   useEffect(() => {
     sauvegarderClients(clients);
   }, [clients]);
+
+  // Mémorise automatiquement le choix d'affichage du tableau de bord
+  useEffect(() => {
+    sauvegarderVisibiliteDashboard(dashboardVisible);
+  }, [dashboardVisible]);
 
   // Ajoute un nouveau client en lui générant un identifiant unique et la date d'ajout
   function ajouterClient(donneesClient) {
@@ -350,6 +366,13 @@ function App() {
         </section>
       )}
 
+      {/* Tableau de bord d'activité : calculé sur TOUS les clients, sans tenir compte du filtre ni de la recherche */}
+      <Dashboard
+        clients={clients}
+        estVisible={dashboardVisible}
+        onBasculerVisibilite={() => setDashboardVisible((visible) => !visible)}
+      />
+
       {/* Formulaire d'ajout ou de modification d'un client.
           La prop key permet à React de réinitialiser proprement les champs quand on change de client édité. */}
       <ClientForm
@@ -390,7 +413,7 @@ function App() {
       />
 
       {/* Pied de page de l'application */}
-      <footer className="footer">MiniGest v1.5 — Patrick Kassi</footer>
+      <footer className="footer">MiniGest v1.6 — Patrick Kassi</footer>
     </div>
   );
 }
