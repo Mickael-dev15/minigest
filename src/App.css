@@ -877,6 +877,59 @@ body {
   font-weight: 600;
 }
 
+/* Boutons cliquables dans les en-têtes de colonnes triables */
+.sort-header-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.sort-header-btn:hover {
+  color: #67e8f9;
+}
+
+.sort-header-btn:focus-visible {
+  outline: 2px solid #1ba8c4;
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.sort-header-btn-active {
+  color: #ffffff;
+}
+
+.sort-icon {
+  font-size: 0.78rem;
+  line-height: 1;
+  color: #94a3b8;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.sort-header-btn:hover .sort-icon {
+  opacity: 1;
+}
+
+.sort-icon-active {
+  color: #67e8f9;
+  opacity: 1;
+}
+
+/* Liste déroulante "Trier par" : masquée sur ordinateur, affichée sur mobile sous 600 px */
+.mobile-sort {
+  display: none;
+}
+
 .client-table th:first-child {
   border-top-left-radius: 8px;
 }
@@ -980,6 +1033,39 @@ body {
 
   .csv-actions .btn-csv {
     width: 100%;
+  }
+
+  /* Sélecteur de tri affiché au-dessus des cartes sur mobile */
+  .mobile-sort {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-bottom: 1rem;
+  }
+
+  .mobile-sort-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #12223a;
+  }
+
+  .mobile-sort-select {
+    width: 100%;
+    min-height: 40px;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-family: inherit;
+    color: #1f2937;
+    background-color: #ffffff;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .mobile-sort-select:focus {
+    outline: none;
+    border-color: #1ba8c4;
+    box-shadow: 0 0 0 3px rgba(27, 168, 196, 0.22);
   }
 
   /* Transformation du tableau en cartes (une carte par client) */

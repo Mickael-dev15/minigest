@@ -28,7 +28,11 @@
   - Note facultative de 500 caractères maximum (au-delà, message d'erreur rouge et blocage de l'enregistrement).
   - Mise en forme automatique : **NOM** en majuscules et **Prénom** avec une majuscule initiale.
   - Affichage des erreurs en rouge sous chaque champ concerné.
-- **Liste des clients** : affichage sous forme de tableau trié par ordre alphabétique sur le nom (dimensionné pour tenir sans défilement horizontal sur un écran de `1366 px`), avec :
+- **Liste des clients et tri par colonne** : affichage sous forme de tableau dimensionné pour tenir sans défilement horizontal sur un écran de `1366 px`, trié par défaut par **Nom croissant** :
+  - **Tri interactif sur ordinateur** : en-têtes cliquables pour **Nom**, **Prénom**, **Statut**, **Ville** et **Date d'ajout**, avec flèche active (`▲` / `▼`), flèche grisée (`↕`) sur les autres colonnes triables et attribut d'accessibilité `aria-sort` sur la colonne active. Un 1er clic trie par ordre croissant et un 2e clic par ordre décroissant (exception pour **Date d'ajout** : 1er clic du plus récent au plus ancien, 2e clic du plus ancien au plus récent).
+  - **Tri sur mobile (sous `600 px`)** : liste déroulante **Trier par** au-dessus des cartes proposant les mêmes choix (*Nom (A → Z)*, *Date d'ajout (plus récent)*, etc.).
+  - **Règles de tri** : comparaison en français insensible aux majuscules et aux accents (`localeCompare('fr', { sensitivity: 'base' })`, regroupant par exemple *Thiès* et *THIES*), ordre métier pour le statut (`Prospect` → `Client` → `Inactif`), ordre chronologique pour la date d'ajout, valeurs vides toujours placées en fin de liste quel que soit le sens, et départage par **Nom** puis **Prénom** en cas d'égalité.
+  - **Fonctionnement** : le tri s'applique après la recherche et le filtre par statut, renumérote la colonne `N°` (`1, 2, 3…`), est mémorisé dans `localStorage` (`minigest_tri`) et ne modifie ni l'export CSV ni le tableau de bord.
   - Badge coloré dans la colonne **Statut** : `Prospect` (bleu cyan), `Client` (vert), `Inactif` (gris).
   - Colonne **Note** affichée uniquement en texte via JSX (jamais de HTML) : aperçu des 40 premiers caractères suivis de `…` dans le tableau avec la note complète au survol (`title`), et note complète dans les cartes mobiles.
   - Date d'ajout au format `jj/mm/aaaa`.
@@ -99,20 +103,21 @@ minigest/
 ├── REGLES_PROJET.md             # Règles et cahier des charges du projet
 └── src/
     ├── main.jsx                 # Point d'entrée React
-    ├── App.jsx                  # Composant racine (state, filtrage, sauvegarde)
+    ├── App.jsx                  # Composant racine (state, filtrage, tri, sauvegarde)
     ├── App.css                  # Styles globaux et affichage responsive
     ├── components/
     │   ├── Header.jsx           # En-tête avec titre et compteur total de clients
     │   ├── Dashboard.jsx        # Tableau de bord d'activité (indicateurs et graphiques CSS)
     │   ├── ClientForm.jsx       # Formulaire contrôlé d'ajout avec validation
     │   ├── SearchBar.jsx        # Barre de recherche et compteur de résultats
-    │   ├── ClientList.jsx       # Tableau trié des clients (ou message si vide)
+    │   ├── ClientList.jsx       # Tableau triable des clients et sélecteur de tri mobile
     │   └── ClientRow.jsx        # Ligne (ou carte mobile) d'un client + contact, édition, suppression
     └── utils/
         ├── csv.js               # Export et import CSV compatibles Excel (sans bibliothèque externe)
         ├── statistiques.js      # Fonctions pures de calcul des indicateurs et graphiques
         ├── storage.js           # Lecture, migration et écriture dans localStorage
         ├── telephone.js         # Normalisation, formatage et lien WhatsApp des numéros de téléphone
+        ├── tri.js               # Fonctions pures de tri de la liste par colonne
         └── validation.js        # Validation et mise en forme des champs client
 ```
 
@@ -120,4 +125,4 @@ minigest/
 
 ## Auteur
 
-**Patrick Kassi** — *MiniGest v1.6*
+**Patrick Kassi** — *MiniGest v1.7*

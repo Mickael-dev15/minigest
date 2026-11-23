@@ -5,12 +5,16 @@ import {
   STATUT_PAR_DEFAUT,
   STATUTS_CLIENT,
 } from './validation.js';
+import { normaliserTri, TRI_PAR_DEFAUT } from './tri.js';
 
 // Clé unique utilisée dans le navigateur pour MiniGest
 const CLE_STOCKAGE = 'minigest_clients';
 
 // Clé utilisée pour mémoriser si le tableau de bord est affiché ou masqué
 const CLE_DASHBOARD_VISIBLE = 'minigest_dashboard_visible';
+
+// Clé utilisée pour mémoriser le choix de tri de la liste des clients
+const CLE_TRI = 'minigest_tri';
 
 // Migre les clients déjà enregistrés sans jamais en supprimer un seul :
 // - normalise le numéro de téléphone si possible (sinon conservé tel quel)
@@ -117,6 +121,30 @@ export function chargerVisibiliteDashboard() {
 export function sauvegarderVisibiliteDashboard(estVisible) {
   try {
     localStorage.setItem(CLE_DASHBOARD_VISIBLE, String(Boolean(estVisible)));
+  } catch {
+    // Évite un plantage si le stockage du navigateur est bloqué
+  }
+}
+
+// Lit le choix de tri sauvegardé dans localStorage (Nom croissant par défaut)
+export function chargerTri() {
+  try {
+    const donneesBrutes = localStorage.getItem(CLE_TRI);
+    if (!donneesBrutes) {
+      return { ...TRI_PAR_DEFAUT };
+    }
+
+    const triLu = JSON.parse(donneesBrutes);
+    return normaliserTri(triLu);
+  } catch {
+    return { ...TRI_PAR_DEFAUT };
+  }
+}
+
+// Enregistre le choix de tri dans localStorage sous forme de texte JSON
+export function sauvegarderTri(tri) {
+  try {
+    localStorage.setItem(CLE_TRI, JSON.stringify(normaliserTri(tri)));
   } catch {
     // Évite un plantage si le stockage du navigateur est bloqué
   }

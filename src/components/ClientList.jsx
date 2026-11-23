@@ -1,6 +1,8 @@
-// Composant qui affiche la liste des clients sous forme de tableau trié par nom,
+// Composant qui affiche la liste des clients sous forme de tableau triable par colonne
+// (ou de cartes sur mobile avec liste déroulante "Trier par"),
 // ainsi que les filtres par statut et les boutons d'export / import CSV au-dessus de la liste
 import ClientRow from './ClientRow.jsx';
+import { OPTIONS_TRI_MOBILE } from '../utils/tri.js';
 
 // Définition des boutons de filtre par statut affichés au-dessus de la liste
 const OPTIONS_FILTRE_STATUT = [
@@ -17,6 +19,9 @@ function ClientList({
   filtreStatut,
   compteursStatut,
   onChangerFiltreStatut,
+  tri,
+  onTrierColonne,
+  onChangerTri,
   idClientEnEdition,
   bilanImport,
   onEditerClient,
@@ -42,11 +47,46 @@ function ClientList({
     evenement.target.value = '';
   }
 
-  // On crée une copie du tableau avec [...clients] avant de trier
-  // (car .sort() modifie le tableau sur place et on ne doit jamais modifier le state directement)
-  const clientsTries = [...clients].sort((a, b) =>
-    a.nom.localeCompare(b.nom, 'fr', { sensitivity: 'base' })
-  );
+  // Gère le choix de tri dans la liste déroulante affichée sur mobile
+  function gererChangementTriMobile(evenement) {
+    const [colonne, ordre] = evenement.target.value.split(':');
+    onChangerTri({ colonne, ordre });
+  }
+
+  // Construit un en-tête de colonne triable avec bouton cliquable, flèche et attribut aria-sort
+  function rendreEnTeteTriable(colonne, libelle) {
+    const estActive = tri.colonne === colonne;
+    const ariaSort = estActive
+      ? tri.ordre === 'asc'
+        ? 'ascending'
+        : 'descending'
+      : undefined;
+    const fleche = estActive ? (tri.ordre === 'asc' ? '▲' : '▼') : '↕';
+
+    return (
+      <th aria-sort={ariaSort}>
+        <button
+          type="button"
+          className={
+            estActive
+              ? 'sort-header-btn sort-header-btn-active'
+              : 'sort-header-btn'
+          }
+          onClick={() => onTrierColonne(colonne)}
+        >
+          <span>{libelle}</span>
+          <span
+            className={
+              estActive ? 'sort-icon sort-icon-active' : 'sort-icon'
+            }
+            aria-hidden="true"
+          >
+            {fleche}
+          </span>
+        </button>
+      </th>
+    );
+  }
 
   // Détermine le style visuel du bilan d'import (rouge = erreur, vert = tout importé, orange = lignes ignorées ou avertissements)
   const avertissements = bilanImport?.avertissements ?? [];
@@ -162,42 +202,63 @@ function ClientList({
         </div>
       )}
 
-      {/* Message si aucun client à afficher, ou tableau des clients */}
+      {/* Message si aucun client à afficher, ou tableau / cartes des clients */}
       {clients.length === 0 ? (
         <p className="empty-text">
           {filtreActif ? 'Aucun client trouvé' : 'Aucun client enregistré'}
         </p>
       ) : (
-        <div className="table-wrapper">
-          <table className="client-table">
-            <thead>
-              <tr>
-                <th>N°</th>
-                <th>Nom</th>
-                <th>Prénom</th>
-                <th>Statut</th>
-                <th>Téléphone</th>
-                <th>Email</th>
-                <th>Ville</th>
-                <th>Note</th>
-                <th>Date d&apos;ajout</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {clientsTries.map((client, index) => (
-                <ClientRow
-                  key={client.id}
-                  numero={index + 1}
-                  client={client}
-                  estEnEdition={client.id === idClientEnEdition}
-                  onEditerClient={onEditerClient}
-                  onSupprimerClient={onSupprimerClient}
-                />
+        <>
+          {/* Sélecteur de tri affiché uniquement sur mobile (sous 600 px), au-dessus des cartes */}
+          <div className="mobile-sort">
+            <label htmlFor="tri-mobile" className="mobile-sort-label">
+              Trier par
+            </label>
+            <select
+              id="tri-mobile"
+              className="mobile-sort-select"
+              value={`${tri.colonne}:${tri.ordre}`}
+              onChange={gererChangementTriMobile}
+            >
+              {OPTIONS_TRI_MOBILE.map((option) => (
+                <option key={option.valeur} value={option.valeur}>
+                  {option.libelle}
+                </option>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </select>
+          </div>
+
+          <div className="table-wrapper">
+            <table className="client-table">
+              <thead>
+                <tr>
+                  <th>N°</th>
+                  {rendreEnTeteTriable('nom', 'Nom')}
+                  {rendreEnTeteTriable('prenom', 'Prénom')}
+                  {rendreEnTeteTriable('statut', 'Statut')}
+                  <th>Téléphone</th>
+                  <th>Email</th>
+                  {rendreEnTeteTriable('ville', 'Ville')}
+                  <th>Note</th>
+                  {rendreEnTeteTriable('dateAjout', "Date d'ajout")}
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clients.map((client, index) => (
+                  <ClientRow
+                    key={client.id}
+                    numero={index + 1}
+                    client={client}
+                    estEnEdition={client.id === idClientEnEdition}
+                    onEditerClient={onEditerClient}
+                    onSupprimerClient={onSupprimerClient}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </section>
   );

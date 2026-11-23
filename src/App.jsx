@@ -11,6 +11,8 @@ import {
   sauvegarderClients,
   chargerVisibiliteDashboard,
   sauvegarderVisibiliteDashboard,
+  chargerTri,
+  sauvegarderTri,
 } from './utils/storage.js';
 import { validerClient } from './utils/validation.js';
 import {
@@ -22,6 +24,11 @@ import {
   importerCSV,
   obtenirNomFichierExport,
 } from './utils/csv.js';
+import {
+  calculerProchainTri,
+  normaliserTri,
+  trierClients,
+} from './utils/tri.js';
 
 // Supprime les accents et met le texte en minuscules pour comparer facilement
 function normaliserTexte(texte) {
@@ -55,6 +62,9 @@ function App() {
     chargerVisibiliteDashboard()
   );
 
+  // State pour mémoriser la colonne et le sens de tri actifs (mémorisé dans localStorage)
+  const [tri, setTri] = useState(() => chargerTri());
+
   // Sauvegarde automatiquement dans localStorage à chaque modification de la liste
   useEffect(() => {
     sauvegarderClients(clients);
@@ -64,6 +74,21 @@ function App() {
   useEffect(() => {
     sauvegarderVisibiliteDashboard(dashboardVisible);
   }, [dashboardVisible]);
+
+  // Mémorise automatiquement le choix de tri dans localStorage
+  useEffect(() => {
+    sauvegarderTri(tri);
+  }, [tri]);
+
+  // Change le tri lors d'un clic sur un en-tête de colonne du tableau
+  function gererTriColonne(colonne) {
+    setTri((triActuel) => calculerProchainTri(triActuel, colonne));
+  }
+
+  // Applique directement un tri choisi dans la liste déroulante mobile
+  function gererSelectionTri(nouveauTri) {
+    setTri(normaliserTri(nouveauTri));
+  }
 
   // Ajoute un nouveau client en lui générant un identifiant unique et la date d'ajout
   function ajouterClient(donneesClient) {
@@ -338,6 +363,9 @@ function App() {
     );
   });
 
+  // Le tri s'applique APRÈS la recherche et le filtre par statut, sans modifier "clients"
+  const clientsAffiches = trierClients(clientsFiltres, tri);
+
   return (
     <div className="app">
       {/* En-tête : affiche toujours le nombre TOTAL de clients */}
@@ -395,14 +423,17 @@ function App() {
         filtreStatut={filtreStatut}
       />
 
-      {/* Tableau des clients (tous les clients, ou uniquement ceux qui correspondent au filtre et à la recherche) */}
+      {/* Tableau des clients (filtrés puis triés selon la colonne choisie) */}
       <ClientList
-        clients={clientsFiltres}
+        clients={clientsAffiches}
         totalClients={clients.length}
         enRecherche={enRecherche}
         filtreStatut={filtreStatut}
         compteursStatut={compteursStatut}
         onChangerFiltreStatut={setFiltreStatut}
+        tri={tri}
+        onTrierColonne={gererTriColonne}
+        onChangerTri={gererSelectionTri}
         idClientEnEdition={clientEnEdition ? clientEnEdition.id : null}
         bilanImport={bilanImport}
         onEditerClient={demarrerEdition}
@@ -413,7 +444,7 @@ function App() {
       />
 
       {/* Pied de page de l'application */}
-      <footer className="footer">MiniGest v1.6 — Patrick Kassi</footer>
+      <footer className="footer">MiniGest v1.7 — Patrick Kassi</footer>
     </div>
   );
 }
