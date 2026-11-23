@@ -1,5 +1,13 @@
 // Composant représentant une ligne (ou une carte sur mobile) pour un client
-import { formaterTelephone } from '../utils/telephone.js';
+import {
+  estTelephoneNormalise,
+  formaterTelephone,
+  lienWhatsApp,
+} from '../utils/telephone.js';
+
+// Message d'infobulle affiché quand un numéro n'est pas encore normalisé
+const INFOBULLE_NUMERO_INVALIDE =
+  'Numéro à corriger avant de contacter ce client';
 
 function ClientRow({
   numero,
@@ -14,6 +22,10 @@ function ClientRow({
     month: '2-digit',
     year: 'numeric',
   });
+
+  // Vérifie si le numéro est normalisé afin d'activer ou non les boutons de contact
+  const telephoneValide = estTelephoneNormalise(client.telephone);
+  const urlWhatsApp = lienWhatsApp(client);
 
   // Demande confirmation avant de supprimer le client
   function gererSuppression() {
@@ -38,6 +50,41 @@ function ClientRow({
       <td data-label="Date d'ajout">{dateFormatee}</td>
       <td data-label="Action">
         <div className="action-buttons">
+          {/* Si le numéro est normalisé, on affiche de vrais liens <a> ; sinon des <button disabled> grisés */}
+          {telephoneValide && urlWhatsApp ? (
+            <>
+              <a
+                href={urlWhatsApp}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-whatsapp"
+              >
+                WhatsApp
+              </a>
+              <a href={`tel:${client.telephone}`} className="btn-call">
+                Appeler
+              </a>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="btn-whatsapp"
+                disabled
+                title={INFOBULLE_NUMERO_INVALIDE}
+              >
+                WhatsApp
+              </button>
+              <button
+                type="button"
+                className="btn-call"
+                disabled
+                title={INFOBULLE_NUMERO_INVALIDE}
+              >
+                Appeler
+              </button>
+            </>
+          )}
           <button
             type="button"
             className="btn-edit"

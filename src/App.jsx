@@ -342,7 +342,7 @@ function App() {
       />
 
       {/* Pied de page de l'application */}
-      <footer className="footer">MiniGest v1.3 — Patrick Kassi</footer>
+      <footer className="footer">MiniGest v1.4 — Patrick Kassi</footer>
     </div>
   );
 }

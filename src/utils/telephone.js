@@ -115,3 +115,34 @@ export function nettoyerRechercheTelephone(saisie) {
 
   return nettoye.startsWith('00') ? `+${nettoye.slice(2)}` : nettoye;
 }
+
+// Vérifie qu'un numéro est bien au format international normalisé (ex. "+221771234567")
+export function estTelephoneNormalise(numero) {
+  const texte = String(numero ?? '');
+  if (!/^\+\d{8,15}$/.test(texte)) {
+    return false;
+  }
+
+  // On réutilise normaliserTelephone pour vérifier aussi les règles de longueur par pays
+  const { numero: numeroNormalise, erreur } = normaliserTelephone(texte);
+  return erreur === '' && numeroNormalise === texte;
+}
+
+// Construit le lien WhatsApp d'un client avec un message de bienvenue pré-rempli.
+// Renvoie null si le numéro du client n'est pas au format international normalisé.
+export function lienWhatsApp(client) {
+  const telephone = client?.telephone;
+  if (!estTelephoneNormalise(telephone)) {
+    return null;
+  }
+
+  // L'adresse wa.me attend le numéro international sans le symbole "+" (ex. 221771234567)
+  const numeroSansPlus = telephone.slice(1);
+
+  // On prépare le message pré-rempli avec le prénom du client, puis on l'encode pour l'URL
+  const prenom = String(client?.prenom ?? '').trim();
+  const message = prenom ? `Bonjour ${prenom}, ` : 'Bonjour, ';
+  const messageEncode = encodeURIComponent(message);
+
+  return `https://wa.me/${numeroSansPlus}?text=${messageEncode}`;
+}

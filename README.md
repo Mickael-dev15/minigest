@@ -24,6 +24,11 @@
 - **Suppression sécurisée** : bouton rouge **Supprimer** avec demande de confirmation avant effacement.
 - **Compteur total** : badge mis à jour automatiquement dans l'en-tête indiquant le nombre total de clients enregistrés.
 - **Sauvegarde locale (`localStorage`) et migration automatique** : chargement automatique au démarrage, normalisation des numéros déjà enregistrés (sans jamais supprimer de client si un numéro ne peut pas être normalisé) et sauvegarde à chaque modification sous la clé `minigest_clients`. Si la normalisation révèle des doublons, un bandeau orange signale les fiches concernées pour laisser l'utilisateur décider.
+- **Contacter un client en un clic** : boutons **WhatsApp** et **Appeler** directement sur chaque ligne du tableau et chaque carte mobile :
+  - **WhatsApp** (vert `#25D366`) : ouvre `https://wa.me/NUMERO?text=MESSAGE` dans un nouvel onglet avec le numéro international sans le `+` et un message pré-rempli (`Bonjour Prénom, `) encodé avec `encodeURIComponent`.
+  - **Appeler** : ouvre l'application d'appel via un lien `tel:+...` avec le numéro normalisé.
+  - Si le numéro d'un client n'est pas au format normalisé (ex. ancien numéro incomplet), les deux boutons sont remplacés par des `<button disabled>` grisés avec l'infobulle `Numéro à corriger avant de contacter ce client`.
+  - Sur mobile (cartes), les boutons disposent d'une hauteur minimale de `40 px` pour rester confortables à toucher.
 - **Export CSV compatible Excel (français)** : bouton **Exporter (CSV)** au-dessus de la liste (désactivé si la liste est vide) téléchargeant un fichier `minigest_clients_AAAA-MM-JJ.csv` en UTF-8 avec BOM, séparateur point-virgule (`;`), échappement des valeurs contenant `;` ou `"`, dates au format `jj/mm/aaaa` et téléphones protégés sous la forme `="+221771234567"` pour éviter leur conversion en notation scientifique dans Excel.
 - **Import CSV sécurisé** : bouton **Importer (CSV)** acceptant le séparateur `;` ou `,` et les deux formats de téléphone (`="..."` ou texte simple), ajoutant les clients valides sans jamais remplacer la liste existante. Chaque ligne passe par `validerClient` (nouvel identifiant généré, conservation de la date d'ajout si valide sinon date du jour, mise en forme **NOM** / **Prénom**), avec détection des numéros abîmés par Excel (`E+`) et affichage d'un bilan détaillé (`X client(s) importé(s), Y ligne(s) ignorée(s)` avec numéro de ligne et raison).
 
@@ -85,11 +90,11 @@ minigest/
     │   ├── ClientForm.jsx       # Formulaire contrôlé d'ajout avec validation
     │   ├── SearchBar.jsx        # Barre de recherche et compteur de résultats
     │   ├── ClientList.jsx       # Tableau trié des clients (ou message si vide)
-    │   └── ClientRow.jsx        # Ligne (ou carte mobile) d'un client + suppression
+    │   └── ClientRow.jsx        # Ligne (ou carte mobile) d'un client + contact, édition, suppression
     └── utils/
         ├── csv.js               # Export et import CSV compatibles Excel (sans bibliothèque externe)
         ├── storage.js           # Lecture, migration et écriture dans localStorage
-        ├── telephone.js         # Normalisation et formatage des numéros de téléphone
+        ├── telephone.js         # Normalisation, formatage et lien WhatsApp des numéros de téléphone
         └── validation.js        # Validation et mise en forme des champs client
 ```
 
@@ -97,4 +102,4 @@ minigest/
 
 ## Auteur
 
-**Patrick Kassi** — *MiniGest v1.3*
+**Patrick Kassi** — *MiniGest v1.4*
