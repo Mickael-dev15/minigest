@@ -32,6 +32,9 @@ function App() {
   // State contenant le texte tapé dans la barre de recherche
   const [recherche, setRecherche] = useState('');
 
+  // State contenant le filtre de statut actif ("Tous", "Prospect", "Client" ou "Inactif")
+  const [filtreStatut, setFiltreStatut] = useState('Tous');
+
   // State contenant le client en cours de modification (null lorsqu'on est en mode ajout)
   const [clientEnEdition, setClientEnEdition] = useState(null);
 
@@ -56,6 +59,12 @@ function App() {
 
     // On crée un nouveau tableau sans modifier le state directement
     setClients([...clients, nouveauClient]);
+
+    // Si le nouveau client ne correspond pas au filtre de statut actif, on repasse sur "Tous" pour le rendre visible
+    if (filtreStatut !== 'Tous' && nouveauClient.statut !== filtreStatut) {
+      setFiltreStatut('Tous');
+    }
+
     setMessageSucces('Client ajouté avec succès');
   }
 
@@ -94,6 +103,11 @@ function App() {
         return client;
       })
     );
+
+    // Si le client modifié ne correspond plus au filtre de statut actif, on repasse sur "Tous" pour le garder visible
+    if (filtreStatut !== 'Tous' && clientModifie.statut !== filtreStatut) {
+      setFiltreStatut('Tous');
+    }
 
     // Retourne au mode ajout avec le message de confirmation
     setClientEnEdition(null);
@@ -147,6 +161,7 @@ function App() {
           "Impossible de lire ce fichier. Vérifiez qu'il s'agit bien d'un fichier CSV valide.",
         nbImportes: 0,
         lignesIgnorees: [],
+        avertissements: [],
       });
     };
 
@@ -160,6 +175,7 @@ function App() {
           erreur: resultat.erreur,
           nbImportes: 0,
           lignesIgnorees: [],
+          avertissements: [],
         });
         return;
       }
@@ -168,12 +184,13 @@ function App() {
       const clientsDeReference = [...clients];
       const nouveauxClients = [];
       const lignesIgnorees = [];
+      const avertissements = [];
 
       for (const ligne of resultat.lignes) {
         if (ligne.tropDeColonnes) {
           lignesIgnorees.push({
             numeroLigne: ligne.numeroLigne,
-            raison: 'Nombre de colonnes incorrect (6 colonnes attendues)',
+            raison: `Nombre de colonnes incorrect (${ligne.nbColonnesAttendues} colonnes attendues)`,
           });
           continue;
         }
@@ -201,6 +218,14 @@ function App() {
           continue;
         }
 
+        // Si le statut du CSV était inconnu, on a appliqué "Client" par défaut et on le signale dans le bilan
+        if (ligne.statutInconnu) {
+          avertissements.push({
+            numeroLigne: ligne.numeroLigne,
+            message: 'statut inconnu, Client par défaut',
+          });
+        }
+
         const nouveauClient = {
           id: crypto.randomUUID(),
           ...donneesPropres,
@@ -220,6 +245,7 @@ function App() {
         erreur: null,
         nbImportes: nouveauxClients.length,
         lignesIgnorees,
+        avertissements,
       });
     };
 
@@ -246,37 +272,55 @@ function App() {
       clients: liste,
     }));
 
-  // Calcul direct de la liste filtrée (valeur dérivée, pas besoin d'un second state)
+  // Compteurs par statut calculés directement à partir de la liste des clients (valeurs dérivées, aucun state en plus)
+  const compteursStatut = {
+    Tous: clients.length,
+    Prospect: clients.filter((client) => client.statut === 'Prospect').length,
+    Client: clients.filter((client) => client.statut === 'Client').length,
+    Inactif: clients.filter((client) => client.statut === 'Inactif').length,
+  };
+
+  // Calcul direct de la liste filtrée combinant le filtre par statut et la recherche texte (incluant la note)
   const rechercheNormalisee = normaliserTexte(recherche.trim());
   const rechercheTelephone = nettoyerRechercheTelephone(recherche);
   const enRecherche = rechercheNormalisee !== '';
 
-  const clientsFiltres = enRecherche
-    ? clients.filter((client) => {
-        const nom = normaliserTexte(client.nom);
-        const prenom = normaliserTexte(client.prenom);
-        const telephone = normaliserTexte(client.telephone);
-        const telephoneFormate = normaliserTexte(
-          formaterTelephone(client.telephone)
-        );
-        const telephoneSansSeparateurs = String(client.telephone ?? '').replace(
-          /[\s.\-()]/g,
-          ''
-        );
+  const clientsFiltres = clients.filter((client) => {
+    // 1. Filtre par statut
+    if (filtreStatut !== 'Tous' && client.statut !== filtreStatut) {
+      return false;
+    }
 
-        const correspondTelephone =
-          telephone.includes(rechercheNormalisee) ||
-          telephoneFormate.includes(rechercheNormalisee) ||
-          (rechercheTelephone !== '' &&
-            telephoneSansSeparateurs.includes(rechercheTelephone));
+    // 2. Filtre par recherche texte (nom, prénom, téléphone ou note)
+    if (!enRecherche) {
+      return true;
+    }
 
-        return (
-          nom.includes(rechercheNormalisee) ||
-          prenom.includes(rechercheNormalisee) ||
-          correspondTelephone
-        );
-      })
-    : clients;
+    const nom = normaliserTexte(client.nom);
+    const prenom = normaliserTexte(client.prenom);
+    const telephone = normaliserTexte(client.telephone);
+    const telephoneFormate = normaliserTexte(
+      formaterTelephone(client.telephone)
+    );
+    const telephoneSansSeparateurs = String(client.telephone ?? '').replace(
+      /[\s.\-()]/g,
+      ''
+    );
+    const note = normaliserTexte(client.note ?? '');
+
+    const correspondTelephone =
+      telephone.includes(rechercheNormalisee) ||
+      telephoneFormate.includes(rechercheNormalisee) ||
+      (rechercheTelephone !== '' &&
+        telephoneSansSeparateurs.includes(rechercheTelephone));
+
+    return (
+      nom.includes(rechercheNormalisee) ||
+      prenom.includes(rechercheNormalisee) ||
+      correspondTelephone ||
+      note.includes(rechercheNormalisee)
+    );
+  });
 
   return (
     <div className="app">
@@ -325,13 +369,17 @@ function App() {
         onChangerRecherche={setRecherche}
         nbResultats={clientsFiltres.length}
         totalClients={clients.length}
+        filtreStatut={filtreStatut}
       />
 
-      {/* Tableau des clients (tous les clients, ou uniquement ceux qui correspondent à la recherche) */}
+      {/* Tableau des clients (tous les clients, ou uniquement ceux qui correspondent au filtre et à la recherche) */}
       <ClientList
         clients={clientsFiltres}
         totalClients={clients.length}
         enRecherche={enRecherche}
+        filtreStatut={filtreStatut}
+        compteursStatut={compteursStatut}
+        onChangerFiltreStatut={setFiltreStatut}
         idClientEnEdition={clientEnEdition ? clientEnEdition.id : null}
         bilanImport={bilanImport}
         onEditerClient={demarrerEdition}
@@ -342,7 +390,7 @@ function App() {
       />
 
       {/* Pied de page de l'application */}
-      <footer className="footer">MiniGest v1.4 — Patrick Kassi</footer>
+      <footer className="footer">MiniGest v1.5 — Patrick Kassi</footer>
     </div>
   );
 }

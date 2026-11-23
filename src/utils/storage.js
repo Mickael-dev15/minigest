@@ -1,12 +1,18 @@
 // Utilitaires pour charger, migrer et sauvegarder la liste des clients dans localStorage
 import { normaliserTelephone } from './telephone.js';
+import {
+  normaliserStatut,
+  STATUT_PAR_DEFAUT,
+  STATUTS_CLIENT,
+} from './validation.js';
 
 // Clé unique utilisée dans le navigateur pour MiniGest
 const CLE_STOCKAGE = 'minigest_clients';
 
-// Normalise les numéros de téléphone des clients déjà enregistrés sans jamais en supprimer un seul
-// Si un numéro ne peut pas être normalisé, il est conservé tel quel
-export function migrerTelephonesClients(clients) {
+// Migre les clients déjà enregistrés sans jamais en supprimer un seul :
+// - normalise le numéro de téléphone si possible (sinon conservé tel quel)
+// - ajoute le statut "Client" et une note vide aux anciens clients sans ces champs
+export function migrerClients(clients) {
   let aEteModifie = false;
 
   const clientsMigres = clients.map((client) => {
@@ -14,22 +20,45 @@ export function migrerTelephonesClients(clients) {
       return client;
     }
 
+    let clientModifie = client;
+
+    // 1. Normalisation du numéro de téléphone
     const { numero, erreur } = normaliserTelephone(client.telephone);
     if (!erreur && numero !== client.telephone) {
       aEteModifie = true;
-      return {
-        ...client,
+      clientModifie = {
+        ...clientModifie,
         telephone: numero,
       };
     }
 
-    return client;
+    // 2. Migration du statut (les clients existants sans statut reçoivent "Client")
+    const statutValide = STATUTS_CLIENT.includes(client.statut);
+    if (!statutValide) {
+      const statutMigre = normaliserStatut(client.statut) || STATUT_PAR_DEFAUT;
+      aEteModifie = true;
+      clientModifie = {
+        ...clientModifie,
+        statut: statutMigre,
+      };
+    }
+
+    // 3. Migration de la note (note vide si absente)
+    if (typeof client.note !== 'string') {
+      aEteModifie = true;
+      clientModifie = {
+        ...clientModifie,
+        note: '',
+      };
+    }
+
+    return clientModifie;
   });
 
   return { clientsMigres, aEteModifie };
 }
 
-// Lit la liste des clients sauvegardée dans localStorage et migre les téléphones si nécessaire
+// Lit la liste des clients sauvegardée dans localStorage et applique les migrations si nécessaire
 // Si rien n'est enregistré ou si les données sont corrompues, renvoie une liste vide []
 export function chargerClients() {
   try {
@@ -46,8 +75,8 @@ export function chargerClients() {
       return [];
     }
 
-    // Migration automatique des téléphones existants vers le format normalisé
-    const { clientsMigres, aEteModifie } = migrerTelephonesClients(clients);
+    // Migration automatique des téléphones, statuts et notes sans jamais supprimer de client
+    const { clientsMigres, aEteModifie } = migrerClients(clients);
     if (aEteModifie) {
       sauvegarderClients(clientsMigres);
     }

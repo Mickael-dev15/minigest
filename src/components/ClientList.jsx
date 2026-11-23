@@ -1,11 +1,22 @@
 // Composant qui affiche la liste des clients sous forme de tableau trié par nom,
-// ainsi que les boutons d'export et d'import CSV au-dessus de la liste
+// ainsi que les filtres par statut et les boutons d'export / import CSV au-dessus de la liste
 import ClientRow from './ClientRow.jsx';
+
+// Définition des boutons de filtre par statut affichés au-dessus de la liste
+const OPTIONS_FILTRE_STATUT = [
+  { valeur: 'Tous', libelle: 'Tous' },
+  { valeur: 'Prospect', libelle: 'Prospects' },
+  { valeur: 'Client', libelle: 'Clients' },
+  { valeur: 'Inactif', libelle: 'Inactifs' },
+];
 
 function ClientList({
   clients,
   totalClients,
   enRecherche,
+  filtreStatut,
+  compteursStatut,
+  onChangerFiltreStatut,
   idClientEnEdition,
   bilanImport,
   onEditerClient,
@@ -37,13 +48,19 @@ function ClientList({
     a.nom.localeCompare(b.nom, 'fr', { sensitivity: 'base' })
   );
 
-  // Détermine le style visuel du bilan d'import (rouge = erreur, vert = tout importé, orange = lignes ignorées)
+  // Détermine le style visuel du bilan d'import (rouge = erreur, vert = tout importé, orange = lignes ignorées ou avertissements)
+  const avertissements = bilanImport?.avertissements ?? [];
   let classeBilan = 'import-report-success';
   if (bilanImport?.erreur) {
     classeBilan = 'import-report-error';
-  } else if (bilanImport && bilanImport.lignesIgnorees.length > 0) {
+  } else if (
+    bilanImport &&
+    (bilanImport.lignesIgnorees.length > 0 || avertissements.length > 0)
+  ) {
     classeBilan = 'import-report-warning';
   }
+
+  const filtreActif = enRecherche || filtreStatut !== 'Tous';
 
   return (
     <section className="card">
@@ -80,6 +97,34 @@ function ClientList({
         </div>
       </div>
 
+      {/* Boutons de filtre par statut avec compteur calculé pour chaque catégorie */}
+      <div
+        className="status-filters"
+        role="group"
+        aria-label="Filtrer les clients par statut"
+      >
+        {OPTIONS_FILTRE_STATUT.map((option) => {
+          const estActif = filtreStatut === option.valeur;
+          const nombre = compteursStatut[option.valeur] ?? 0;
+
+          return (
+            <button
+              key={option.valeur}
+              type="button"
+              className={
+                estActif
+                  ? `status-filter-btn status-filter-active status-filter-${option.valeur.toLowerCase()}`
+                  : `status-filter-btn status-filter-${option.valeur.toLowerCase()}`
+              }
+              aria-pressed={estActif}
+              onClick={() => onChangerFiltreStatut(option.valeur)}
+            >
+              {option.libelle} ({nombre})
+            </button>
+          );
+        })}
+      </div>
+
       {/* Bilan ou message d'erreur affiché après un import CSV */}
       {bilanImport && (
         <div className={`import-report ${classeBilan}`} role="status">
@@ -98,22 +143,29 @@ function ClientList({
             </button>
           </div>
 
-          {!bilanImport.erreur && bilanImport.lignesIgnorees.length > 0 && (
-            <ul className="import-report-list">
-              {bilanImport.lignesIgnorees.map((ligne, index) => (
-                <li key={`${ligne.numeroLigne}-${index}`}>
-                  Ligne {ligne.numeroLigne} : {ligne.raison}
-                </li>
-              ))}
-            </ul>
-          )}
+          {!bilanImport.erreur &&
+            (avertissements.length > 0 ||
+              bilanImport.lignesIgnorees.length > 0) && (
+              <ul className="import-report-list">
+                {avertissements.map((avertissement, index) => (
+                  <li key={`avert-${avertissement.numeroLigne}-${index}`}>
+                    Ligne {avertissement.numeroLigne} : {avertissement.message}
+                  </li>
+                ))}
+                {bilanImport.lignesIgnorees.map((ligne, index) => (
+                  <li key={`ignore-${ligne.numeroLigne}-${index}`}>
+                    Ligne {ligne.numeroLigne} : {ligne.raison}
+                  </li>
+                ))}
+              </ul>
+            )}
         </div>
       )}
 
       {/* Message si aucun client à afficher, ou tableau des clients */}
       {clients.length === 0 ? (
         <p className="empty-text">
-          {enRecherche ? 'Aucun client trouvé' : 'Aucun client enregistré'}
+          {filtreActif ? 'Aucun client trouvé' : 'Aucun client enregistré'}
         </p>
       ) : (
         <div className="table-wrapper">
@@ -123,9 +175,11 @@ function ClientList({
                 <th>N°</th>
                 <th>Nom</th>
                 <th>Prénom</th>
+                <th>Statut</th>
                 <th>Téléphone</th>
                 <th>Email</th>
                 <th>Ville</th>
+                <th>Note</th>
                 <th>Date d&apos;ajout</th>
                 <th>Action</th>
               </tr>

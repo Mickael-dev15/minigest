@@ -1,6 +1,13 @@
-// Composant barre de recherche : filtre les clients en temps réel
-function SearchBar({ recherche, onChangerRecherche, nbResultats, totalClients }) {
+// Composant barre de recherche : filtre les clients en temps réel (nom, prénom, téléphone et note)
+function SearchBar({
+  recherche,
+  onChangerRecherche,
+  nbResultats,
+  totalClients,
+  filtreStatut = 'Tous',
+}) {
   const enRecherche = recherche.trim() !== '';
+  const filtreActif = enRecherche || filtreStatut !== 'Tous';
 
   // Accord singulier / pluriel pour l'affichage du compteur de résultats
   const libelleResultat = nbResultats > 1 ? 'résultats' : 'résultat';
@@ -14,8 +21,8 @@ function SearchBar({ recherche, onChangerRecherche, nbResultats, totalClients })
           className="search-input"
           value={recherche}
           onChange={(event) => onChangerRecherche(event.target.value)}
-          placeholder="Rechercher par nom, prénom ou téléphone…"
-          aria-label="Rechercher un client par nom, prénom ou téléphone"
+          placeholder="Rechercher par nom, prénom, téléphone ou note…"
+          aria-label="Rechercher un client par nom, prénom, téléphone ou note"
         />
 
         {/* Bouton affiché uniquement lorsqu'une recherche est saisie */}
@@ -30,8 +37,8 @@ function SearchBar({ recherche, onChangerRecherche, nbResultats, totalClients })
         )}
       </div>
 
-      {/* Compteur affiché uniquement pendant une recherche active */}
-      {enRecherche && (
+      {/* Compteur affiché lorsqu'une recherche ou un filtre de statut est actif */}
+      {filtreActif && (
         <p className="search-results-count">
           {nbResultats} {libelleResultat} sur {totalClients} {libelleClient}
         </p>

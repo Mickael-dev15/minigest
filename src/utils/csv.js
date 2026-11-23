@@ -1,10 +1,11 @@
 // Utilitaires pour exporter et importer la liste des clients au format CSV (sans bibliothèque externe)
 import { normaliserTelephone } from './telephone.js';
+import { normaliserStatut, STATUT_PAR_DEFAUT } from './validation.js';
 
 // Caractère invisible (BOM UTF-8) qui indique à Excel d'ouvrir le fichier en UTF-8 avec les bons accents
 const BOM_UTF8 = '\uFEFF';
 
-// En-têtes attendus dans le fichier CSV
+// En-têtes produits à l'export CSV (8 colonnes en v1.5)
 const ENTETES_CSV = [
   'Nom',
   'Prénom',
@@ -12,10 +13,12 @@ const ENTETES_CSV = [
   'Email',
   'Ville',
   "Date d'ajout",
+  'Statut',
+  'Note',
 ];
 
-// En-têtes normalisés (sans accents, en minuscules) pour faciliter la vérification à l'import
-const ENTETES_NORMALISES = [
+// En-têtes normalisés acceptés à l'import : ancien format à 6 colonnes et nouveau format à 8 colonnes
+const ENTETES_NORMALISES_6 = [
   'nom',
   'prenom',
   'telephone',
@@ -23,6 +26,8 @@ const ENTETES_NORMALISES = [
   'ville',
   "date d'ajout",
 ];
+
+const ENTETES_NORMALISES_8 = [...ENTETES_NORMALISES_6, 'statut', 'note'];
 
 // Transforme un texte en minuscules sans accents ni apostrophe typographique pour comparer les titres de colonnes
 function normaliserEntete(texte) {
@@ -106,6 +111,8 @@ export function exporterCSV(clients) {
       echapperCelluleCSV(client.email),
       echapperCelluleCSV(client.ville),
       echapperCelluleCSV(formaterDateFR(client.dateAjout)),
+      echapperCelluleCSV(client.statut || STATUT_PAR_DEFAUT),
+      echapperCelluleCSV(client.note ?? ''),
     ];
 
     lignes.push(colonnes.join(';'));
@@ -327,7 +334,7 @@ export function importerCSV(texte) {
   if (!separateur) {
     return {
       erreur:
-        "Format CSV non reconnu. Utilisez le séparateur point-virgule (;) ou virgule (,) avec les colonnes : Nom ; Prénom ; Téléphone ; Email ; Ville ; Date d'ajout.",
+        "Format CSV non reconnu. Utilisez le séparateur point-virgule (;) ou virgule (,) avec les colonnes : Nom ; Prénom ; Téléphone ; Email ; Ville ; Date d'ajout (et en option Statut ; Note).",
       lignes: [],
     };
   }
@@ -348,16 +355,19 @@ export function importerCSV(texte) {
     };
   }
 
-  // Vérification de la ligne d'en-tête (première ligne non vide)
+  // Vérification de la ligne d'en-tête : on accepte les fichiers à 6 colonnes (v1.4) et à 8 colonnes (v1.5)
   const enteteLu = enregistrements[0].cellules.map(normaliserEntete);
-  const enteteValide =
-    enteteLu.length === ENTETES_NORMALISES.length &&
-    ENTETES_NORMALISES.every((colonne, index) => enteteLu[index] === colonne);
+  const estFormat6Colonnes =
+    enteteLu.length === ENTETES_NORMALISES_6.length &&
+    ENTETES_NORMALISES_6.every((colonne, index) => enteteLu[index] === colonne);
+  const estFormat8Colonnes =
+    enteteLu.length === ENTETES_NORMALISES_8.length &&
+    ENTETES_NORMALISES_8.every((colonne, index) => enteteLu[index] === colonne);
 
-  if (!enteteValide) {
+  if (!estFormat6Colonnes && !estFormat8Colonnes) {
     return {
       erreur:
-        "Les colonnes du fichier CSV ne correspondent pas. Colonnes attendues : Nom ; Prénom ; Téléphone ; Email ; Ville ; Date d'ajout.",
+        "Les colonnes du fichier CSV ne correspondent pas. Colonnes attendues : Nom ; Prénom ; Téléphone ; Email ; Ville ; Date d'ajout (ou avec Statut ; Note).",
       lignes: [],
     };
   }
@@ -369,22 +379,46 @@ export function importerCSV(texte) {
     };
   }
 
+  const nbColonnesAttendues = estFormat8Colonnes ? 8 : 6;
+
   // Transformation de chaque ligne de données en objet client prêt à passer dans validerClient
   const lignes = enregistrements.slice(1).map((enregistrement) => {
     const { numeroLigne, cellules } = enregistrement;
 
-    if (cellules.length > ENTETES_CSV.length) {
+    if (cellules.length > nbColonnesAttendues) {
       return {
         numeroLigne,
         tropDeColonnes: true,
+        nbColonnesAttendues,
       };
     }
 
     const telephone = nettoyerTelephoneImport(cellules[2]);
 
+    // Pour un ancien fichier à 6 colonnes : statut "Client" et note vide
+    let statut = STATUT_PAR_DEFAUT;
+    let statutInconnu = false;
+    let note = '';
+
+    if (estFormat8Colonnes) {
+      const statutBrut = String(cellules[6] ?? '').trim();
+      if (statutBrut !== '') {
+        const statutReconnu = normaliserStatut(statutBrut);
+        if (statutReconnu) {
+          statut = statutReconnu;
+        } else {
+          // Valeur inconnue : on applique "Client" par défaut et on le signale dans le bilan
+          statut = STATUT_PAR_DEFAUT;
+          statutInconnu = true;
+        }
+      }
+      note = cellules[7] ?? '';
+    }
+
     return {
       numeroLigne,
       tropDeColonnes: false,
+      nbColonnesAttendues,
       telephoneAbimeExcel: estNotationScientifique(telephone),
       nom: cellules[0] ?? '',
       prenom: cellules[1] ?? '',
@@ -392,6 +426,9 @@ export function importerCSV(texte) {
       email: cellules[3] ?? '',
       ville: cellules[4] ?? '',
       dateAjout: analyserDateAjout(cellules[5]),
+      statut,
+      statutInconnu,
+      note,
     };
   });
 

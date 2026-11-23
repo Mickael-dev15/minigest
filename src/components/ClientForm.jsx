@@ -1,6 +1,11 @@
 // Composant formulaire contrôlé permettant d'ajouter ou de modifier un client avec validation
 import { useState } from 'react';
-import { validerClient } from '../utils/validation.js';
+import {
+  NOTE_LONGUEUR_MAX,
+  STATUTS_CLIENT,
+  STATUT_PAR_DEFAUT,
+  validerClient,
+} from '../utils/validation.js';
 import { formaterTelephone } from '../utils/telephone.js';
 
 function ClientForm({
@@ -15,7 +20,7 @@ function ClientForm({
   // Indique si le formulaire est actuellement en mode modification
   const enModeEdition = clientEnEdition !== null;
 
-  // Un state par champ, initialisé avec les valeurs du client en édition (ou vide en mode ajout)
+  // Un state par champ, initialisé avec les valeurs du client en édition (ou valeurs par défaut en ajout)
   const [nom, setNom] = useState(clientEnEdition ? clientEnEdition.nom : '');
   const [prenom, setPrenom] = useState(
     clientEnEdition ? clientEnEdition.prenom : ''
@@ -29,9 +34,16 @@ function ClientForm({
   const [ville, setVille] = useState(
     clientEnEdition ? clientEnEdition.ville : ''
   );
+  const [statut, setStatut] = useState(
+    clientEnEdition?.statut || STATUT_PAR_DEFAUT
+  );
+  const [note, setNote] = useState(clientEnEdition?.note ?? '');
 
   // State contenant les messages d'erreur par champ (ex. { nom: "Le nom est obligatoire" })
   const [erreurs, setErreurs] = useState({});
+
+  // Indique si la note dépasse la limite de 500 caractères (valeur calculée)
+  const noteTropLongue = note.length > NOTE_LONGUEUR_MAX;
 
   // Efface le message d'erreur d'un champ précis dès que l'utilisateur le modifie
   function effacerErreurChamp(champ) {
@@ -55,7 +67,7 @@ function ClientForm({
 
     // Valide et nettoie les champs avant tout enregistrement
     const { erreurs: nouvellesErreurs, donneesPropres } = validerClient(
-      { nom, prenom, telephone, email, ville },
+      { nom, prenom, telephone, email, ville, statut, note },
       clients,
       idIgnore
     );
@@ -83,6 +95,8 @@ function ClientForm({
       setTelephone('');
       setEmail('');
       setVille('');
+      setStatut(STATUT_PAR_DEFAUT);
+      setNote('');
       setErreurs({});
     }
   }
@@ -182,6 +196,55 @@ function ClientForm({
               placeholder="Ex. Dakar"
             />
           </div>
+
+          <div className="form-group">
+            <label htmlFor="statut">Statut</label>
+            <select
+              id="statut"
+              className={erreurs.statut ? 'input-error' : ''}
+              value={statut}
+              onChange={(event) => {
+                setStatut(event.target.value);
+                effacerErreurChamp('statut');
+              }}
+            >
+              {STATUTS_CLIENT.map((optionStatut) => (
+                <option key={optionStatut} value={optionStatut}>
+                  {optionStatut}
+                </option>
+              ))}
+            </select>
+            {erreurs.statut && (
+              <p className="error-message">{erreurs.statut}</p>
+            )}
+          </div>
+        </div>
+
+        <div className="form-group">
+          <div className="note-label-row">
+            <label htmlFor="note">Note</label>
+            <span
+              className={
+                noteTropLongue
+                  ? 'note-counter note-counter-error'
+                  : 'note-counter'
+              }
+            >
+              {note.length} / {NOTE_LONGUEUR_MAX}
+            </span>
+          </div>
+          <textarea
+            id="note"
+            rows="3"
+            className={erreurs.note || noteTropLongue ? 'input-error' : ''}
+            value={note}
+            onChange={(event) => {
+              setNote(event.target.value);
+              effacerErreurChamp('note');
+            }}
+            placeholder="Ex. Préfère être contactée sur WhatsApp le matin…"
+          />
+          {erreurs.note && <p className="error-message">{erreurs.note}</p>}
         </div>
 
         <div className="form-actions">

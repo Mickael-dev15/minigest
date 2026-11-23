@@ -1,6 +1,37 @@
 // Utilitaires pour valider et nettoyer les informations d'un client avant enregistrement
 import { normaliserTelephone } from './telephone.js';
 
+// Liste officielle des statuts possibles pour un client
+export const STATUTS_CLIENT = ['Prospect', 'Client', 'Inactif'];
+
+// Statut appliqué par défaut (nouveau client, migration, import 6 colonnes ou statut inconnu)
+export const STATUT_PAR_DEFAUT = 'Client';
+
+// Nombre maximal de caractères autorisés dans la note d'un client
+export const NOTE_LONGUEUR_MAX = 500;
+
+// Reconnaît un statut sans tenir compte des majuscules ni des accents
+// Renvoie "Prospect", "Client", "Inactif", ou null si la valeur est inconnue
+export function normaliserStatut(valeur) {
+  const propre = String(valeur ?? '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+  if (propre === 'prospect') {
+    return 'Prospect';
+  }
+  if (propre === 'client') {
+    return 'Client';
+  }
+  if (propre === 'inactif') {
+    return 'Inactif';
+  }
+
+  return null;
+}
+
 // Supprime les espaces au début, à la fin, et remplace les espaces multiples par un seul espace
 function nettoyerEspaces(texte) {
   return String(texte ?? '')
@@ -30,6 +61,9 @@ export function validerClient(donnees, clients = [], idIgnore = null) {
   const telephone = String(donnees.telephone ?? '').trim();
   const email = String(donnees.email ?? '').trim();
   const ville = nettoyerEspaces(donnees.ville);
+  const statutBrut = String(donnees.statut ?? '').trim();
+  const noteBrute =
+    typeof donnees.note === 'string' ? donnees.note : String(donnees.note ?? '');
 
   // 2. Validation du nom (obligatoire, entre 2 et 50 caractères)
   if (nom === '') {
@@ -75,13 +109,31 @@ export function validerClient(donnees, clients = [], idIgnore = null) {
     erreurs.email = "Le format de l'email n'est pas valide";
   }
 
-  // 6. Mise en forme finale des données propres
+  // 6. Validation du statut (Prospect, Client ou Inactif ; Client par défaut si absent)
+  let statutFinal = STATUT_PAR_DEFAUT;
+  if (statutBrut !== '') {
+    const statutReconnu = normaliserStatut(statutBrut);
+    if (statutReconnu) {
+      statutFinal = statutReconnu;
+    } else {
+      erreurs.statut = 'Le statut doit être Prospect, Client ou Inactif';
+    }
+  }
+
+  // 7. Validation de la note (facultative, 500 caractères maximum)
+  if (noteBrute.length > NOTE_LONGUEUR_MAX) {
+    erreurs.note = `La note ne doit pas dépasser ${NOTE_LONGUEUR_MAX} caractères`;
+  }
+
+  // 8. Mise en forme finale des données propres
   const donneesPropres = {
     nom: nom.toUpperCase(),
     prenom: formaterPrenom(prenom),
     telephone: telephoneNormalise || telephone,
     email,
     ville,
+    statut: statutFinal,
+    note: noteBrute.trim(),
   };
 
   return { erreurs, donneesPropres };
