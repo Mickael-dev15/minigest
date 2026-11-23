@@ -13,6 +13,8 @@ import {
   sauvegarderVisibiliteDashboard,
   chargerTri,
   sauvegarderTri,
+  chargerParPage,
+  sauvegarderParPage,
 } from './utils/storage.js';
 import { validerClient } from './utils/validation.js';
 import {
@@ -29,6 +31,7 @@ import {
   normaliserTri,
   trierClients,
 } from './utils/tri.js';
+import { normaliserParPage, paginer } from './utils/pagination.js';
 
 // Supprime les accents et met le texte en minuscules pour comparer facilement
 function normaliserTexte(texte) {
@@ -36,6 +39,53 @@ function normaliserTexte(texte) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
+}
+
+// Applique la recherche texte puis le filtre par statut, sans modifier la liste d'origine
+function filtrerClients(listeClients, recherche, filtreStatut) {
+  const rechercheNormalisee = normaliserTexte(recherche.trim());
+  const rechercheTelephone = nettoyerRechercheTelephone(recherche);
+  const enRecherche = rechercheNormalisee !== '';
+
+  return listeClients.filter((client) => {
+    // 1. Recherche texte (nom, prénom, téléphone ou note)
+    if (enRecherche) {
+      const nom = normaliserTexte(client.nom);
+      const prenom = normaliserTexte(client.prenom);
+      const telephone = normaliserTexte(client.telephone);
+      const telephoneFormate = normaliserTexte(
+        formaterTelephone(client.telephone)
+      );
+      const telephoneSansSeparateurs = String(client.telephone ?? '').replace(
+        /[\s.\-()]/g,
+        ''
+      );
+      const note = normaliserTexte(client.note ?? '');
+
+      const correspondTelephone =
+        telephone.includes(rechercheNormalisee) ||
+        telephoneFormate.includes(rechercheNormalisee) ||
+        (rechercheTelephone !== '' &&
+          telephoneSansSeparateurs.includes(rechercheTelephone));
+
+      const correspondRecherche =
+        nom.includes(rechercheNormalisee) ||
+        prenom.includes(rechercheNormalisee) ||
+        correspondTelephone ||
+        note.includes(rechercheNormalisee);
+
+      if (!correspondRecherche) {
+        return false;
+      }
+    }
+
+    // 2. Filtre par statut
+    if (filtreStatut !== 'Tous' && client.statut !== filtreStatut) {
+      return false;
+    }
+
+    return true;
+  });
 }
 
 function App() {
@@ -65,6 +115,12 @@ function App() {
   // State pour mémoriser la colonne et le sens de tri actifs (mémorisé dans localStorage)
   const [tri, setTri] = useState(() => chargerTri());
 
+  // State pour le nombre de clients affichés par page (mémorisé dans localStorage, 10 par défaut)
+  const [parPage, setParPage] = useState(() => chargerParPage());
+
+  // State pour la page courante (non mémorisé : on revient toujours en page 1 à l'ouverture)
+  const [pageCourante, setPageCourante] = useState(1);
+
   // Sauvegarde automatiquement dans localStorage à chaque modification de la liste
   useEffect(() => {
     sauvegarderClients(clients);
@@ -80,17 +136,43 @@ function App() {
     sauvegarderTri(tri);
   }, [tri]);
 
-  // Change le tri lors d'un clic sur un en-tête de colonne du tableau
+  // Mémorise automatiquement le nombre de clients par page dans localStorage
+  useEffect(() => {
+    sauvegarderParPage(parPage);
+  }, [parPage]);
+
+  // Met à jour la recherche et revient directement à la page 1
+  function gererChangementRecherche(nouvelleRecherche) {
+    setRecherche(nouvelleRecherche);
+    setPageCourante(1);
+  }
+
+  // Met à jour le filtre de statut et revient directement à la page 1
+  function gererChangementFiltreStatut(nouveauStatut) {
+    setFiltreStatut(nouveauStatut);
+    setPageCourante(1);
+  }
+
+  // Change le tri lors d'un clic sur un en-tête de colonne du tableau et revient à la page 1
   function gererTriColonne(colonne) {
     setTri((triActuel) => calculerProchainTri(triActuel, colonne));
+    setPageCourante(1);
   }
 
-  // Applique directement un tri choisi dans la liste déroulante mobile
+  // Applique directement un tri choisi dans la liste déroulante mobile et revient à la page 1
   function gererSelectionTri(nouveauTri) {
     setTri(normaliserTri(nouveauTri));
+    setPageCourante(1);
   }
 
-  // Ajoute un nouveau client en lui générant un identifiant unique et la date d'ajout
+  // Change le nombre de clients affichés par page et revient directement à la page 1
+  function gererChangementParPage(nouveauParPage) {
+    setParPage(normaliserParPage(nouveauParPage));
+    setPageCourante(1);
+  }
+
+  // Ajoute un nouveau client en lui générant un identifiant unique et la date d'ajout,
+  // puis affiche directement la page où ce nouveau client apparaît
   function ajouterClient(donneesClient) {
     const nouveauClient = {
       id: crypto.randomUUID(),
@@ -99,11 +181,33 @@ function App() {
     };
 
     // On crée un nouveau tableau sans modifier le state directement
-    setClients([...clients, nouveauClient]);
+    const nouvelleListe = [...clients, nouveauClient];
+    setClients(nouvelleListe);
 
     // Si le nouveau client ne correspond pas au filtre de statut actif, on repasse sur "Tous" pour le rendre visible
-    if (filtreStatut !== 'Tous' && nouveauClient.statut !== filtreStatut) {
-      setFiltreStatut('Tous');
+    const nouveauFiltreStatut =
+      filtreStatut !== 'Tous' && nouveauClient.statut !== filtreStatut
+        ? 'Tous'
+        : filtreStatut;
+
+    if (nouveauFiltreStatut !== filtreStatut) {
+      setFiltreStatut(nouveauFiltreStatut);
+    }
+
+    // Calcule la position du client ajouté après recherche, filtre et tri pour aller sur sa page
+    const listeFiltree = filtrerClients(
+      nouvelleListe,
+      recherche,
+      nouveauFiltreStatut
+    );
+    const listeTriee = trierClients(listeFiltree, tri);
+    const indexNouveauClient = listeTriee.findIndex(
+      (client) => client.id === nouveauClient.id
+    );
+
+    if (indexNouveauClient !== -1) {
+      const pageDuNouveauClient = Math.floor(indexNouveauClient / parPage) + 1;
+      setPageCourante(pageDuNouveauClient);
     }
 
     setMessageSucces('Client ajouté avec succès');
@@ -130,24 +234,43 @@ function App() {
 
   // Met à jour un seul client dans la liste grâce à map(), sans modifier le state directement
   function modifierClient(clientModifie) {
-    setClients(
-      clients.map((client) => {
-        if (client.id === clientModifie.id) {
-          // On remplace uniquement les champs modifiés tout en conservant l'id et la dateAjout d'origine
-          return {
-            ...client,
-            ...clientModifie,
-            id: client.id,
-            dateAjout: client.dateAjout,
-          };
-        }
-        return client;
-      })
-    );
+    const nouvelleListe = clients.map((client) => {
+      if (client.id === clientModifie.id) {
+        // On remplace uniquement les champs modifiés tout en conservant l'id et la dateAjout d'origine
+        return {
+          ...client,
+          ...clientModifie,
+          id: client.id,
+          dateAjout: client.dateAjout,
+        };
+      }
+      return client;
+    });
+
+    setClients(nouvelleListe);
 
     // Si le client modifié ne correspond plus au filtre de statut actif, on repasse sur "Tous" pour le garder visible
-    if (filtreStatut !== 'Tous' && clientModifie.statut !== filtreStatut) {
-      setFiltreStatut('Tous');
+    const nouveauFiltreStatut =
+      filtreStatut !== 'Tous' && clientModifie.statut !== filtreStatut
+        ? 'Tous'
+        : filtreStatut;
+
+    if (nouveauFiltreStatut !== filtreStatut) {
+      setFiltreStatut(nouveauFiltreStatut);
+    }
+
+    // Si la page courante n'existe plus après modification (ex. recherche active), on recale sur la dernière page
+    const listeFiltreeApresModif = filtrerClients(
+      nouvelleListe,
+      recherche,
+      nouveauFiltreStatut
+    );
+    const nouveauTotalPages = Math.max(
+      1,
+      Math.ceil(listeFiltreeApresModif.length / parPage)
+    );
+    if (pageCourante > nouveauTotalPages) {
+      setPageCourante(nouveauTotalPages);
     }
 
     // Retourne au mode ajout avec le message de confirmation
@@ -158,7 +281,23 @@ function App() {
   // Supprime le client correspondant à l'identifiant donné grâce à filter()
   function supprimerClient(id) {
     // filter() renvoie un nouveau tableau contenant tous les clients sauf celui à supprimer
-    setClients(clients.filter((client) => client.id !== id));
+    const nouvelleListe = clients.filter((client) => client.id !== id);
+    setClients(nouvelleListe);
+
+    // Si la page courante n'existe plus (ex. suppression du dernier client de la dernière page),
+    // on revient automatiquement à la dernière page existante
+    const listeFiltreeApresSuppression = filtrerClients(
+      nouvelleListe,
+      recherche,
+      filtreStatut
+    );
+    const nouveauTotalPages = Math.max(
+      1,
+      Math.ceil(listeFiltreeApresSuppression.length / parPage)
+    );
+    if (pageCourante > nouveauTotalPages) {
+      setPageCourante(nouveauTotalPages);
+    }
 
     // Si le client supprimé était en cours de modification, on quitte le mode édition
     if (clientEnEdition && clientEnEdition.id === id) {
@@ -321,50 +460,11 @@ function App() {
     Inactif: clients.filter((client) => client.statut === 'Inactif').length,
   };
 
-  // Calcul direct de la liste filtrée combinant le filtre par statut et la recherche texte (incluant la note)
-  const rechercheNormalisee = normaliserTexte(recherche.trim());
-  const rechercheTelephone = nettoyerRechercheTelephone(recherche);
-  const enRecherche = rechercheNormalisee !== '';
-
-  const clientsFiltres = clients.filter((client) => {
-    // 1. Filtre par statut
-    if (filtreStatut !== 'Tous' && client.statut !== filtreStatut) {
-      return false;
-    }
-
-    // 2. Filtre par recherche texte (nom, prénom, téléphone ou note)
-    if (!enRecherche) {
-      return true;
-    }
-
-    const nom = normaliserTexte(client.nom);
-    const prenom = normaliserTexte(client.prenom);
-    const telephone = normaliserTexte(client.telephone);
-    const telephoneFormate = normaliserTexte(
-      formaterTelephone(client.telephone)
-    );
-    const telephoneSansSeparateurs = String(client.telephone ?? '').replace(
-      /[\s.\-()]/g,
-      ''
-    );
-    const note = normaliserTexte(client.note ?? '');
-
-    const correspondTelephone =
-      telephone.includes(rechercheNormalisee) ||
-      telephoneFormate.includes(rechercheNormalisee) ||
-      (rechercheTelephone !== '' &&
-        telephoneSansSeparateurs.includes(rechercheTelephone));
-
-    return (
-      nom.includes(rechercheNormalisee) ||
-      prenom.includes(rechercheNormalisee) ||
-      correspondTelephone ||
-      note.includes(rechercheNormalisee)
-    );
-  });
-
-  // Le tri s'applique APRÈS la recherche et le filtre par statut, sans modifier "clients"
-  const clientsAffiches = trierClients(clientsFiltres, tri);
+  // Chaîne complète sans modifier "clients" : recherche → filtre statut → tri → pagination
+  const enRecherche = normaliserTexte(recherche.trim()) !== '';
+  const clientsFiltres = filtrerClients(clients, recherche, filtreStatut);
+  const clientsTries = trierClients(clientsFiltres, tri);
+  const pagination = paginer(clientsTries, pageCourante, parPage);
 
   return (
     <div className="app">
@@ -417,20 +517,28 @@ function App() {
       {/* Barre de recherche en temps réel */}
       <SearchBar
         recherche={recherche}
-        onChangerRecherche={setRecherche}
+        onChangerRecherche={gererChangementRecherche}
         nbResultats={clientsFiltres.length}
         totalClients={clients.length}
         filtreStatut={filtreStatut}
       />
 
-      {/* Tableau des clients (filtrés puis triés selon la colonne choisie) */}
+      {/* Tableau des clients (recherchés, filtrés, triés puis paginés) */}
       <ClientList
-        clients={clientsAffiches}
+        clients={pagination.elements}
         totalClients={clients.length}
+        totalClientsFiltres={clientsTries.length}
+        debutPagination={pagination.debut}
+        finPagination={pagination.fin}
+        pageCourante={pagination.pageCourante}
+        totalPages={pagination.totalPages}
+        parPage={parPage}
+        onChangerPage={setPageCourante}
+        onChangerParPage={gererChangementParPage}
         enRecherche={enRecherche}
         filtreStatut={filtreStatut}
         compteursStatut={compteursStatut}
-        onChangerFiltreStatut={setFiltreStatut}
+        onChangerFiltreStatut={gererChangementFiltreStatut}
         tri={tri}
         onTrierColonne={gererTriColonne}
         onChangerTri={gererSelectionTri}
@@ -444,7 +552,7 @@ function App() {
       />
 
       {/* Pied de page de l'application */}
-      <footer className="footer">MiniGest v1.7 — Patrick Kassi</footer>
+      <footer className="footer">MiniGest v1.8 — Patrick Kassi</footer>
     </div>
   );
 }

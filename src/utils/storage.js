@@ -6,6 +6,7 @@ import {
   STATUTS_CLIENT,
 } from './validation.js';
 import { normaliserTri, TRI_PAR_DEFAUT } from './tri.js';
+import { normaliserParPage, PAR_PAGE_PAR_DEFAUT } from './pagination.js';
 
 // Clé unique utilisée dans le navigateur pour MiniGest
 const CLE_STOCKAGE = 'minigest_clients';
@@ -15,6 +16,9 @@ const CLE_DASHBOARD_VISIBLE = 'minigest_dashboard_visible';
 
 // Clé utilisée pour mémoriser le choix de tri de la liste des clients
 const CLE_TRI = 'minigest_tri';
+
+// Clé utilisée pour mémoriser le nombre de clients affichés par page
+const CLE_PAR_PAGE = 'minigest_par_page';
 
 // Migre les clients déjà enregistrés sans jamais en supprimer un seul :
 // - normalise le numéro de téléphone si possible (sinon conservé tel quel)
@@ -145,6 +149,28 @@ export function chargerTri() {
 export function sauvegarderTri(tri) {
   try {
     localStorage.setItem(CLE_TRI, JSON.stringify(normaliserTri(tri)));
+  } catch {
+    // Évite un plantage si le stockage du navigateur est bloqué
+  }
+}
+
+// Lit le nombre de clients par page sauvegardé dans localStorage (10 par défaut)
+export function chargerParPage() {
+  try {
+    const valeur = localStorage.getItem(CLE_PAR_PAGE);
+    if (!valeur) {
+      return PAR_PAGE_PAR_DEFAUT;
+    }
+    return normaliserParPage(valeur);
+  } catch {
+    return PAR_PAGE_PAR_DEFAUT;
+  }
+}
+
+// Enregistre le nombre de clients par page dans localStorage
+export function sauvegarderParPage(parPage) {
+  try {
+    localStorage.setItem(CLE_PAR_PAGE, String(normaliserParPage(parPage)));
   } catch {
     // Évite un plantage si le stockage du navigateur est bloqué
   }

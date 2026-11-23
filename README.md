@@ -32,7 +32,12 @@
   - **Tri interactif sur ordinateur** : en-têtes cliquables pour **Nom**, **Prénom**, **Statut**, **Ville** et **Date d'ajout**, avec flèche active (`▲` / `▼`), flèche grisée (`↕`) sur les autres colonnes triables et attribut d'accessibilité `aria-sort` sur la colonne active. Un 1er clic trie par ordre croissant et un 2e clic par ordre décroissant (exception pour **Date d'ajout** : 1er clic du plus récent au plus ancien, 2e clic du plus ancien au plus récent).
   - **Tri sur mobile (sous `600 px`)** : liste déroulante **Trier par** au-dessus des cartes proposant les mêmes choix (*Nom (A → Z)*, *Date d'ajout (plus récent)*, etc.).
   - **Règles de tri** : comparaison en français insensible aux majuscules et aux accents (`localeCompare('fr', { sensitivity: 'base' })`, regroupant par exemple *Thiès* et *THIES*), ordre métier pour le statut (`Prospect` → `Client` → `Inactif`), ordre chronologique pour la date d'ajout, valeurs vides toujours placées en fin de liste quel que soit le sens, et départage par **Nom** puis **Prénom** en cas d'égalité.
-  - **Fonctionnement** : le tri s'applique après la recherche et le filtre par statut, renumérote la colonne `N°` (`1, 2, 3…`), est mémorisé dans `localStorage` (`minigest_tri`) et ne modifie ni l'export CSV ni le tableau de bord.
+  - **Fonctionnement** : le tri s'applique après la recherche et le filtre par statut, est mémorisé dans `localStorage` (`minigest_tri`) et ne modifie ni l'export CSV ni le tableau de bord.
+- **Pagination de la liste des clients** : appliquée en dernier dans la chaîne (**recherche → filtre statut → tri → pagination**), sans modifier l'export CSV ni le tableau de bord qui continuent d'utiliser **tous** les clients :
+  - **10 clients par page** par défaut, avec un sélecteur **Afficher : 10 / 25 / 50** mémorisé dans `localStorage` (`minigest_par_page`).
+  - **Navigation sous la liste** : boutons **Précédent** et **Suivant**, numéros de page (condensés avec `…` au-delà de 7 pages, ex. `1 … 4 5 6 … 12`), attribut d'accessibilité `aria-current="page"` sur la page active, et texte récapitulatif `Affichage 11–20 sur 41 clients` (adapté à la recherche et au filtre actifs).
+  - **Comportement intelligent** : retour automatique en page `1` quand la recherche, le filtre de statut, le tri ou le nombre par page change ; recalage sur la dernière page existante si la page courante devient vide après suppression ; saut automatique vers la page du client qui vient d'être ajouté ; numérotation continue de la colonne `N°` d'une page à l'autre (`11, 12…` en page 2) ; masquage des contrôles lorsque tous les clients tiennent sur une seule page ; page courante non mémorisée (retour en page `1` à l'ouverture).
+  - **Mobile (sous `600 px`)** : contrôles simplifiés `‹ Précédent   Page 2 / 5   Suivant ›` avec boutons d'au moins `40 px` de haut.
   - Badge coloré dans la colonne **Statut** : `Prospect` (bleu cyan), `Client` (vert), `Inactif` (gris).
   - Colonne **Note** affichée uniquement en texte via JSX (jamais de HTML) : aperçu des 40 premiers caractères suivis de `…` dans le tableau avec la note complète au survol (`title`), et note complète dans les cartes mobiles.
   - Date d'ajout au format `jj/mm/aaaa`.
@@ -103,17 +108,19 @@ minigest/
 ├── REGLES_PROJET.md             # Règles et cahier des charges du projet
 └── src/
     ├── main.jsx                 # Point d'entrée React
-    ├── App.jsx                  # Composant racine (state, filtrage, tri, sauvegarde)
+    ├── App.jsx                  # Composant racine (state, filtrage, tri, pagination, sauvegarde)
     ├── App.css                  # Styles globaux et affichage responsive
     ├── components/
     │   ├── Header.jsx           # En-tête avec titre et compteur total de clients
     │   ├── Dashboard.jsx        # Tableau de bord d'activité (indicateurs et graphiques CSS)
     │   ├── ClientForm.jsx       # Formulaire contrôlé d'ajout avec validation
     │   ├── SearchBar.jsx        # Barre de recherche et compteur de résultats
-    │   ├── ClientList.jsx       # Tableau triable des clients et sélecteur de tri mobile
-    │   └── ClientRow.jsx        # Ligne (ou carte mobile) d'un client + contact, édition, suppression
+    │   ├── ClientList.jsx       # Tableau triable des clients, sélecteur de tri mobile et pagination
+    │   ├── ClientRow.jsx        # Ligne (ou carte mobile) d'un client + contact, édition, suppression
+    │   └── Pagination.jsx       # Contrôles de pagination bureau/mobile et choix du nombre par page
     └── utils/
         ├── csv.js               # Export et import CSV compatibles Excel (sans bibliothèque externe)
+        ├── pagination.js        # Fonctions pures de découpage par page et d'affichage des numéros
         ├── statistiques.js      # Fonctions pures de calcul des indicateurs et graphiques
         ├── storage.js           # Lecture, migration et écriture dans localStorage
         ├── telephone.js         # Normalisation, formatage et lien WhatsApp des numéros de téléphone
@@ -125,4 +132,4 @@ minigest/
 
 ## Auteur
 
-**Patrick Kassi** — *MiniGest v1.7*
+**Patrick Kassi** — *MiniGest v1.8*

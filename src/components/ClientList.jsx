@@ -1,7 +1,8 @@
 // Composant qui affiche la liste des clients sous forme de tableau triable par colonne
 // (ou de cartes sur mobile avec liste déroulante "Trier par"),
-// ainsi que les filtres par statut et les boutons d'export / import CSV au-dessus de la liste
+// ainsi que les filtres par statut, les boutons d'export / import CSV et la pagination
 import ClientRow from './ClientRow.jsx';
+import Pagination from './Pagination.jsx';
 import { OPTIONS_TRI_MOBILE } from '../utils/tri.js';
 
 // Définition des boutons de filtre par statut affichés au-dessus de la liste
@@ -15,6 +16,14 @@ const OPTIONS_FILTRE_STATUT = [
 function ClientList({
   clients,
   totalClients,
+  totalClientsFiltres,
+  debutPagination,
+  finPagination,
+  pageCourante,
+  totalPages,
+  parPage,
+  onChangerPage,
+  onChangerParPage,
   enRecherche,
   filtreStatut,
   compteursStatut,
@@ -248,7 +257,7 @@ function ClientList({
                 {clients.map((client, index) => (
                   <ClientRow
                     key={client.id}
-                    numero={index + 1}
+                    numero={debutPagination + index}
                     client={client}
                     estEnEdition={client.id === idClientEnEdition}
                     onEditerClient={onEditerClient}
@@ -258,6 +267,18 @@ function ClientList({
               </tbody>
             </table>
           </div>
+
+          {/* Contrôles de pagination affichés sous la liste */}
+          <Pagination
+            pageCourante={pageCourante}
+            totalPages={totalPages}
+            totalElements={totalClientsFiltres}
+            debut={debutPagination}
+            fin={finPagination}
+            parPage={parPage}
+            onChangerPage={onChangerPage}
+            onChangerParPage={onChangerParPage}
+          />
         </>
       )}
     </section>
