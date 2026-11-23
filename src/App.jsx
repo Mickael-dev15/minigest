@@ -6,6 +6,12 @@ import ClientForm from './components/ClientForm.jsx';
 import SearchBar from './components/SearchBar.jsx';
 import ClientList from './components/ClientList.jsx';
 import { chargerClients, sauvegarderClients } from './utils/storage.js';
+import { validerClient } from './utils/validation.js';
+import {
+  exporterCSV,
+  importerCSV,
+  obtenirNomFichierExport,
+} from './utils/csv.js';
 
 // Supprime les accents et met le texte en minuscules pour comparer facilement
 function normaliserTexte(texte) {
@@ -27,6 +33,9 @@ function App() {
 
   // State pour afficher le message de succès vert après un ajout ou une modification
   const [messageSucces, setMessageSucces] = useState('');
+
+  // State pour afficher le bilan (ou l'erreur) après un import CSV
+  const [bilanImport, setBilanImport] = useState(null);
 
   // Sauvegarde automatiquement dans localStorage à chaque modification de la liste
   useEffect(() => {
@@ -99,6 +108,120 @@ function App() {
     }
   }
 
+  // Exporte tous les clients enregistrés dans un fichier CSV téléchargé par le navigateur
+  function exporterClientsCSV() {
+    if (clients.length === 0) {
+      return;
+    }
+
+    const contenuCSV = exporterCSV(clients);
+    const fichierBlob = new Blob([contenuCSV], {
+      type: 'text/csv;charset=utf-8;',
+    });
+    const url = URL.createObjectURL(fichierBlob);
+
+    const lien = document.createElement('a');
+    lien.href = url;
+    lien.download = obtenirNomFichierExport();
+    document.body.appendChild(lien);
+    lien.click();
+    document.body.removeChild(lien);
+    URL.revokeObjectURL(url);
+  }
+
+  // Lit un fichier CSV choisi par l'utilisateur, valide chaque ligne et ajoute les clients valides
+  function importerClientsCSV(fichier) {
+    if (!fichier) {
+      return;
+    }
+
+    const lecteur = new FileReader();
+
+    lecteur.onerror = () => {
+      setBilanImport({
+        erreur:
+          "Impossible de lire ce fichier. Vérifiez qu'il s'agit bien d'un fichier CSV valide.",
+        nbImportes: 0,
+        lignesIgnorees: [],
+      });
+    };
+
+    lecteur.onload = () => {
+      const texte = typeof lecteur.result === 'string' ? lecteur.result : '';
+      const resultat = importerCSV(texte);
+
+      // Si le fichier est vide, illisible ou n'a pas les bonnes colonnes, on ne modifie rien
+      if (resultat.erreur) {
+        setBilanImport({
+          erreur: resultat.erreur,
+          nbImportes: 0,
+          lignesIgnorees: [],
+        });
+        return;
+      }
+
+      // Copie de référence pour détecter les doublons aussi bien avec la liste existante qu'au sein du fichier
+      const clientsDeReference = [...clients];
+      const nouveauxClients = [];
+      const lignesIgnorees = [];
+
+      for (const ligne of resultat.lignes) {
+        if (ligne.tropDeColonnes) {
+          lignesIgnorees.push({
+            numeroLigne: ligne.numeroLigne,
+            raison: 'Nombre de colonnes incorrect (6 colonnes attendues)',
+          });
+          continue;
+        }
+
+        if (ligne.telephoneAbimeExcel) {
+          lignesIgnorees.push({
+            numeroLigne: ligne.numeroLigne,
+            raison: 'Téléphone abîmé par Excel : ressaisir le numéro',
+          });
+          continue;
+        }
+
+        // Chaque ligne passe par la même fonction validerClient que le formulaire
+        const { erreurs, donneesPropres } = validerClient(
+          ligne,
+          clientsDeReference
+        );
+        const messagesErreurs = Object.values(erreurs);
+
+        if (messagesErreurs.length > 0) {
+          lignesIgnorees.push({
+            numeroLigne: ligne.numeroLigne,
+            raison: messagesErreurs.join(' ; '),
+          });
+          continue;
+        }
+
+        const nouveauClient = {
+          id: crypto.randomUUID(),
+          ...donneesPropres,
+          dateAjout: ligne.dateAjout,
+        };
+
+        nouveauxClients.push(nouveauClient);
+        clientsDeReference.push(nouveauClient);
+      }
+
+      // On ajoute les clients importés à la liste existante sans jamais remplacer ni modifier le state directement
+      if (nouveauxClients.length > 0) {
+        setClients([...clients, ...nouveauxClients]);
+      }
+
+      setBilanImport({
+        erreur: null,
+        nbImportes: nouveauxClients.length,
+        lignesIgnorees,
+      });
+    };
+
+    lecteur.readAsText(fichier, 'UTF-8');
+  }
+
   // Calcul direct de la liste filtrée (valeur dérivée, pas besoin d'un second state)
   const rechercheNormalisee = normaliserTexte(recherche.trim());
   const enRecherche = rechercheNormalisee !== '';
@@ -146,14 +269,19 @@ function App() {
       {/* Tableau des clients (tous les clients, ou uniquement ceux qui correspondent à la recherche) */}
       <ClientList
         clients={clientsFiltres}
+        totalClients={clients.length}
         enRecherche={enRecherche}
         idClientEnEdition={clientEnEdition ? clientEnEdition.id : null}
+        bilanImport={bilanImport}
         onEditerClient={demarrerEdition}
         onSupprimerClient={supprimerClient}
+        onExporterCSV={exporterClientsCSV}
+        onImporterCSV={importerClientsCSV}
+        onFermerBilanImport={() => setBilanImport(null)}
       />
 
       {/* Pied de page de l'application */}
-      <footer className="footer">MiniGest v1.1 — Patrick Kassi</footer>
+      <footer className="footer">MiniGest v1.2 — Patrick Kassi</footer>
     </div>
   );
 }

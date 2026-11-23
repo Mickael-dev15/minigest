@@ -165,8 +165,14 @@ body {
   transition: background-color 0.15s ease;
 }
 
-.btn-primary:hover {
+.btn-primary:hover:not(:disabled) {
   background-color: #1ba8c4;
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Bouton secondaire (Effacer / Annuler) */
@@ -182,7 +188,7 @@ body {
   transition: background-color 0.15s ease;
 }
 
-.btn-secondary:hover {
+.btn-secondary:hover:not(:disabled) {
   background-color: #cbd5e1;
 }
 
@@ -262,7 +268,109 @@ body {
   font-weight: 600;
 }
 
-/* Tableau des clients */
+/* Tableau des clients et barre d'actions CSV */
+.list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.1rem;
+}
+
+.list-header h2 {
+  margin-bottom: 0;
+}
+
+.csv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.btn-csv {
+  padding: 0.55rem 1rem;
+  font-size: 0.9rem;
+}
+
+/* Masque visuellement l'input de fichier tout en le gardant accessible */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Bilan d'import CSV */
+.import-report {
+  margin-bottom: 1.1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+}
+
+.import-report-success {
+  background-color: #dcfce7;
+  color: #15803d;
+  border-color: #86efac;
+}
+
+.import-report-warning {
+  background-color: #fef3c7;
+  color: #92400e;
+  border-color: #fcd34d;
+}
+
+.import-report-error {
+  background-color: #fee2e2;
+  color: #b91c1c;
+  border-color: #fca5a5;
+}
+
+.import-report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.import-report-summary {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.import-report-list {
+  margin: 0.6rem 0 0;
+  padding-left: 1.25rem;
+  font-size: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.btn-close-report {
+  padding: 0.3rem 0.7rem;
+  background-color: rgba(255, 255, 255, 0.75);
+  color: inherit;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-close-report:hover {
+  background-color: #ffffff;
+}
+
 .empty-text {
   margin: 0;
   color: #64748b;
@@ -354,6 +462,20 @@ body {
   .search-input-group {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .list-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .csv-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .csv-actions .btn-csv {
+    width: 100%;
   }
 
   /* Transformation du tableau en cartes (une carte par client) */
