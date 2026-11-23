@@ -7,6 +7,7 @@
 ## Fonctionnalités
 
 - **Ajout d'un client** : formulaire contrôlé avec les champs *Nom*, *Prénom*, *Téléphone*, *Email* et *Ville*, génération automatique d'un identifiant unique (`crypto.randomUUID`) et de la date d'ajout.
+- **Modification d'un client** : bouton bleu marine **Modifier** sur chaque ligne pour pré-remplir le formulaire, surligner le client en cours d'édition, modifier ses informations (tout en conservant son identifiant, sa date d'ajout et en l'autorisant à garder son propre numéro de téléphone) ou annuler l'édition.
 - **Validation des données** :
   - Nom et prénom obligatoires (2 à 50 caractères, espaces superflus supprimés).
   - Téléphone obligatoire (8 à 15 chiffres, `+` facultatif au début) et **unique** (refus des doublons).
@@ -87,4 +88,4 @@ minigest/
 
 ## Auteur
 
-**Patrick Kassi** — *MiniGest v1.0*
+**Patrick Kassi** — *MiniGest v1.1*

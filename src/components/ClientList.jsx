@@ -1,7 +1,13 @@
 // Composant qui affiche la liste des clients sous forme de tableau trié par nom
 import ClientRow from './ClientRow.jsx';
 
-function ClientList({ clients, enRecherche, onSupprimerClient }) {
+function ClientList({
+  clients,
+  enRecherche,
+  idClientEnEdition,
+  onEditerClient,
+  onSupprimerClient,
+}) {
   // Si aucun client à afficher, on adapte le message selon qu'une recherche est active ou non
   if (clients.length === 0) {
     return (
@@ -44,6 +50,8 @@ function ClientList({ clients, enRecherche, onSupprimerClient }) {
                 key={client.id}
                 numero={index + 1}
                 client={client}
+                estEnEdition={client.id === idClientEnEdition}
+                onEditerClient={onEditerClient}
                 onSupprimerClient={onSupprimerClient}
               />
             ))}

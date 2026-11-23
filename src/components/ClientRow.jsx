@@ -1,5 +1,11 @@
 // Composant représentant une ligne (ou une carte sur mobile) pour un client
-function ClientRow({ numero, client, onSupprimerClient }) {
+function ClientRow({
+  numero,
+  client,
+  estEnEdition,
+  onEditerClient,
+  onSupprimerClient,
+}) {
   // Transforme la date ISO en format français jj/mm/aaaa
   const dateFormatee = new Date(client.dateAjout).toLocaleDateString('fr-FR', {
     day: '2-digit',
@@ -19,7 +25,7 @@ function ClientRow({ numero, client, onSupprimerClient }) {
   }
 
   return (
-    <tr>
+    <tr className={estEnEdition ? 'row-editing' : ''}>
       {/* L'attribut data-label sert à afficher le nom de la colonne en mode carte sur mobile */}
       <td data-label="N°">{numero}</td>
       <td data-label="Nom">{client.nom}</td>
@@ -29,9 +35,22 @@ function ClientRow({ numero, client, onSupprimerClient }) {
       <td data-label="Ville">{client.ville || '—'}</td>
       <td data-label="Date d'ajout">{dateFormatee}</td>
       <td data-label="Action">
-        <button type="button" className="btn-danger" onClick={gererSuppression}>
-          Supprimer
-        </button>
+        <div className="action-buttons">
+          <button
+            type="button"
+            className="btn-edit"
+            onClick={() => onEditerClient(client)}
+          >
+            Modifier
+          </button>
+          <button
+            type="button"
+            className="btn-danger"
+            onClick={gererSuppression}
+          >
+            Supprimer
+          </button>
+        </div>
       </td>
     </tr>
   );

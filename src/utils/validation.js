@@ -16,10 +16,11 @@ function formaterPrenom(prenom) {
 }
 
 // Valide les données saisies dans le formulaire par rapport aux règles du projet
+// idIgnore : identifiant du client en cours de modification (ignoré lors du contrôle d'unicité du téléphone)
 // Renvoie un objet contenant :
 // - erreurs : un objet avec un message par champ invalide (vide si tout est bon)
 // - donneesPropres : les champs nettoyés et mis en forme
-export function validerClient(donnees, clients = []) {
+export function validerClient(donnees, clients = [], idIgnore = null) {
   const erreurs = {};
 
   // 1. Nettoyage des espaces superflus
@@ -51,8 +52,9 @@ export function validerClient(donnees, clients = []) {
     erreurs.telephone =
       'Chiffres uniquement (8 à 15 chiffres, "+" facultatif au début)';
   } else {
+    // On ignore le client en cours de modification afin qu'il puisse conserver son propre numéro
     const numeroExisteDeja = clients.some(
-      (client) => client.telephone === telephone
+      (client) => client.telephone === telephone && client.id !== idIgnore
     );
     if (numeroExisteDeja) {
       erreurs.telephone = 'Ce numéro existe déjà';

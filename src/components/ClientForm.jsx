@@ -1,20 +1,36 @@
-// Composant formulaire contrôlé permettant d'ajouter un nouveau client avec validation
+// Composant formulaire contrôlé permettant d'ajouter ou de modifier un client avec validation
 import { useState } from 'react';
 import { validerClient } from '../utils/validation.js';
 
-function ClientForm({ clients, onAjouterClient }) {
-  // Un state par champ du formulaire (formulaire contrôlé par React)
-  const [nom, setNom] = useState('');
-  const [prenom, setPrenom] = useState('');
-  const [telephone, setTelephone] = useState('');
-  const [email, setEmail] = useState('');
-  const [ville, setVille] = useState('');
+function ClientForm({
+  clients,
+  clientEnEdition,
+  messageSucces,
+  onEffacerMessageSucces,
+  onAjouterClient,
+  onModifierClient,
+  onAnnulerEdition,
+}) {
+  // Indique si le formulaire est actuellement en mode modification
+  const enModeEdition = clientEnEdition !== null;
+
+  // Un state par champ, initialisé avec les valeurs du client en édition (ou vide en mode ajout)
+  const [nom, setNom] = useState(clientEnEdition ? clientEnEdition.nom : '');
+  const [prenom, setPrenom] = useState(
+    clientEnEdition ? clientEnEdition.prenom : ''
+  );
+  const [telephone, setTelephone] = useState(
+    clientEnEdition ? clientEnEdition.telephone : ''
+  );
+  const [email, setEmail] = useState(
+    clientEnEdition ? clientEnEdition.email : ''
+  );
+  const [ville, setVille] = useState(
+    clientEnEdition ? clientEnEdition.ville : ''
+  );
 
   // State contenant les messages d'erreur par champ (ex. { nom: "Le nom est obligatoire" })
   const [erreurs, setErreurs] = useState({});
-
-  // State pour afficher le message de confirmation après un ajout réussi
-  const [messageSucces, setMessageSucces] = useState('');
 
   // Efface le message d'erreur d'un champ précis dès que l'utilisateur le modifie
   function effacerErreurChamp(champ) {
@@ -24,46 +40,58 @@ function ClientForm({ clients, onAjouterClient }) {
       setErreurs(nouvellesErreurs);
     }
     if (messageSucces) {
-      setMessageSucces('');
+      onEffacerMessageSucces();
     }
   }
 
-  // Fonction appelée lors du clic sur "Ajouter" (ou touche Entrée)
+  // Fonction appelée lors de la soumission du formulaire (ajout ou modification)
   function gererSoumission(event) {
     // Empêche le navigateur de recharger la page
     event.preventDefault();
 
-    // Valide et nettoie les champs avant tout ajout
+    // En mode modification, on ignore l'id du client en cours pour lui permettre de garder son numéro
+    const idIgnore = clientEnEdition ? clientEnEdition.id : null;
+
+    // Valide et nettoie les champs avant tout enregistrement
     const { erreurs: nouvellesErreurs, donneesPropres } = validerClient(
       { nom, prenom, telephone, email, ville },
-      clients
+      clients,
+      idIgnore
     );
 
-    // S'il y a au moins une erreur, on affiche les messages et on bloque l'ajout
+    // S'il y a au moins une erreur, on affiche les messages et on bloque l'enregistrement
     if (Object.keys(nouvellesErreurs).length > 0) {
       setErreurs(nouvellesErreurs);
-      setMessageSucces('');
+      onEffacerMessageSucces();
       return;
     }
 
-    // Envoie les données nettoyées et formatées au composant parent (App)
-    onAjouterClient(donneesPropres);
+    if (enModeEdition) {
+      // Enregistre les modifications en conservant l'id et la dateAjout du client
+      onModifierClient({
+        ...clientEnEdition,
+        ...donneesPropres,
+      });
+    } else {
+      // Envoie les données nettoyées et formatées au composant parent (App)
+      onAjouterClient(donneesPropres);
 
-    // Vide tous les champs et les erreurs après un ajout réussi
-    setNom('');
-    setPrenom('');
-    setTelephone('');
-    setEmail('');
-    setVille('');
-    setErreurs({});
-
-    // Affiche le message de confirmation
-    setMessageSucces('Client ajouté avec succès');
+      // Vide tous les champs et les erreurs après un ajout réussi
+      setNom('');
+      setPrenom('');
+      setTelephone('');
+      setEmail('');
+      setVille('');
+      setErreurs({});
+    }
   }
 
   return (
-    <section className="card">
-      <h2>Ajouter un client</h2>
+    <section
+      id="formulaire-client"
+      className={enModeEdition ? 'card card-editing' : 'card'}
+    >
+      <h2>{enModeEdition ? 'Modifier un client' : 'Ajouter un client'}</h2>
 
       {/* noValidate désactive les bulles du navigateur pour afficher nos propres erreurs en français */}
       <form className="client-form" onSubmit={gererSoumission} noValidate>
@@ -155,9 +183,22 @@ function ClientForm({ clients, onAjouterClient }) {
           </div>
         </div>
 
-        <button type="submit" className="btn-primary">
-          Ajouter
-        </button>
+        <div className="form-actions">
+          <button type="submit" className="btn-primary">
+            {enModeEdition ? 'Enregistrer les modifications' : 'Ajouter'}
+          </button>
+
+          {/* Bouton Annuler affiché uniquement en mode modification */}
+          {enModeEdition && (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={onAnnulerEdition}
+            >
+              Annuler
+            </button>
+          )}
+        </div>
 
         {/* Message affiché uniquement si messageSucces contient du texte */}
         {messageSucces && <p className="success-message">{messageSucces}</p>}
