@@ -1,4 +1,5 @@
 // Utilitaires pour exporter et importer la liste des clients au format CSV (sans bibliothèque externe)
+import { normaliserTelephone } from './telephone.js';
 
 // Caractère invisible (BOM UTF-8) qui indique à Excel d'ouvrir le fichier en UTF-8 avec les bons accents
 const BOM_UTF8 = '\uFEFF';
@@ -64,15 +65,19 @@ function echapperCelluleCSV(valeur) {
   return texte;
 }
 
-// Met le téléphone sous la forme ="+221771234567" pour éviter qu'Excel le transforme en nombre scientifique
+// Met le téléphone normalisé sous la forme ="+221771234567" pour éviter qu'Excel le transforme en nombre scientifique
 function formaterTelephoneExport(telephone) {
   const valeur = String(telephone ?? '').trim();
   if (!valeur) {
     return '';
   }
 
+  // On exporte le numéro normalisé si possible, sinon la valeur d'origine
+  const { numero, erreur } = normaliserTelephone(valeur);
+  const numeroFinal = erreur ? valeur : numero;
+
   // On retire d'éventuels guillemets pour garder une formule Excel propre
-  const propre = valeur.replace(/"/g, '');
+  const propre = numeroFinal.replace(/"/g, '');
   return `="${propre}"`;
 }
 

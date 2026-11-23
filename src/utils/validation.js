@@ -1,4 +1,5 @@
 // Utilitaires pour valider et nettoyer les informations d'un client avant enregistrement
+import { normaliserTelephone } from './telephone.js';
 
 // Supprime les espaces au début, à la fin, et remplace les espaces multiples par un seul espace
 function nettoyerEspaces(texte) {
@@ -44,18 +45,25 @@ export function validerClient(donnees, clients = [], idIgnore = null) {
     erreurs.prenom = 'Le prénom doit contenir entre 2 et 50 caractères';
   }
 
-  // 4. Validation du téléphone (obligatoire, "+" facultatif au début, 8 à 15 chiffres uniquement, unique)
-  const regexTelephone = /^\+?\d{8,15}$/;
-  if (telephone === '') {
-    erreurs.telephone = 'Le téléphone est obligatoire';
-  } else if (!regexTelephone.test(telephone)) {
-    erreurs.telephone =
-      'Chiffres uniquement (8 à 15 chiffres, "+" facultatif au début)';
+  // 4. Normalisation puis validation du téléphone (format international unique + unicité)
+  const { numero: telephoneNormalise, erreur: erreurTelephone } =
+    normaliserTelephone(telephone);
+
+  if (erreurTelephone) {
+    erreurs.telephone = erreurTelephone;
   } else {
-    // On ignore le client en cours de modification afin qu'il puisse conserver son propre numéro
-    const numeroExisteDeja = clients.some(
-      (client) => client.telephone === telephone && client.id !== idIgnore
-    );
+    // On compare les numéros normalisés et on ignore le client en cours de modification
+    const numeroExisteDeja = clients.some((client) => {
+      if (client.id === idIgnore) {
+        return false;
+      }
+      const resultatExistant = normaliserTelephone(client.telephone);
+      const telephoneExistant = resultatExistant.erreur
+        ? String(client.telephone ?? '').trim()
+        : resultatExistant.numero;
+      return telephoneExistant === telephoneNormalise;
+    });
+
     if (numeroExisteDeja) {
       erreurs.telephone = 'Ce numéro existe déjà';
     }
@@ -71,7 +79,7 @@ export function validerClient(donnees, clients = [], idIgnore = null) {
   const donneesPropres = {
     nom: nom.toUpperCase(),
     prenom: formaterPrenom(prenom),
-    telephone,
+    telephone: telephoneNormalise || telephone,
     email,
     ville,
   };

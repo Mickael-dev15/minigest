@@ -1,4 +1,6 @@
 // Composant représentant une ligne (ou une carte sur mobile) pour un client
+import { formaterTelephone } from '../utils/telephone.js';
+
 function ClientRow({
   numero,
   client,
@@ -30,7 +32,7 @@ function ClientRow({
       <td data-label="N°">{numero}</td>
       <td data-label="Nom">{client.nom}</td>
       <td data-label="Prénom">{client.prenom}</td>
-      <td data-label="Téléphone">{client.telephone}</td>
+      <td data-label="Téléphone">{formaterTelephone(client.telephone)}</td>
       <td data-label="Email">{client.email || '—'}</td>
       <td data-label="Ville">{client.ville || '—'}</td>
       <td data-label="Date d'ajout">{dateFormatee}</td>

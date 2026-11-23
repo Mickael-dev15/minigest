@@ -1,6 +1,7 @@
 // Composant formulaire contrôlé permettant d'ajouter ou de modifier un client avec validation
 import { useState } from 'react';
 import { validerClient } from '../utils/validation.js';
+import { formaterTelephone } from '../utils/telephone.js';
 
 function ClientForm({
   clients,
@@ -20,7 +21,7 @@ function ClientForm({
     clientEnEdition ? clientEnEdition.prenom : ''
   );
   const [telephone, setTelephone] = useState(
-    clientEnEdition ? clientEnEdition.telephone : ''
+    clientEnEdition ? formaterTelephone(clientEnEdition.telephone) : ''
   );
   const [email, setEmail] = useState(
     clientEnEdition ? clientEnEdition.email : ''
@@ -145,7 +146,7 @@ function ClientForm({
                 setTelephone(event.target.value);
                 effacerErreurChamp('telephone');
               }}
-              placeholder="Ex. 771234567 ou +221771234567"
+              placeholder="Ex. 77 123 45 67 ou +221 77 123 45 67"
             />
             {erreurs.telephone && (
               <p className="error-message">{erreurs.telephone}</p>

@@ -8,6 +8,10 @@ import ClientList from './components/ClientList.jsx';
 import { chargerClients, sauvegarderClients } from './utils/storage.js';
 import { validerClient } from './utils/validation.js';
 import {
+  formaterTelephone,
+  nettoyerRechercheTelephone,
+} from './utils/telephone.js';
+import {
   exporterCSV,
   importerCSV,
   obtenirNomFichierExport,
@@ -222,8 +226,29 @@ function App() {
     lecteur.readAsText(fichier, 'UTF-8');
   }
 
+  // Détecte les éventuels doublons de téléphone (ex. apparus après migration) sans rien supprimer
+  const groupesParTelephone = {};
+  for (const client of clients) {
+    const cleTelephone = String(client.telephone ?? '').trim();
+    if (cleTelephone === '') {
+      continue;
+    }
+    if (!groupesParTelephone[cleTelephone]) {
+      groupesParTelephone[cleTelephone] = [];
+    }
+    groupesParTelephone[cleTelephone].push(client);
+  }
+
+  const doublonsTelephone = Object.entries(groupesParTelephone)
+    .filter(([, liste]) => liste.length > 1)
+    .map(([numero, liste]) => ({
+      numero,
+      clients: liste,
+    }));
+
   // Calcul direct de la liste filtrée (valeur dérivée, pas besoin d'un second state)
   const rechercheNormalisee = normaliserTexte(recherche.trim());
+  const rechercheTelephone = nettoyerRechercheTelephone(recherche);
   const enRecherche = rechercheNormalisee !== '';
 
   const clientsFiltres = enRecherche
@@ -231,11 +256,24 @@ function App() {
         const nom = normaliserTexte(client.nom);
         const prenom = normaliserTexte(client.prenom);
         const telephone = normaliserTexte(client.telephone);
+        const telephoneFormate = normaliserTexte(
+          formaterTelephone(client.telephone)
+        );
+        const telephoneSansSeparateurs = String(client.telephone ?? '').replace(
+          /[\s.\-()]/g,
+          ''
+        );
+
+        const correspondTelephone =
+          telephone.includes(rechercheNormalisee) ||
+          telephoneFormate.includes(rechercheNormalisee) ||
+          (rechercheTelephone !== '' &&
+            telephoneSansSeparateurs.includes(rechercheTelephone));
 
         return (
           nom.includes(rechercheNormalisee) ||
           prenom.includes(rechercheNormalisee) ||
-          telephone.includes(rechercheNormalisee)
+          correspondTelephone
         );
       })
     : clients;
@@ -244,6 +282,29 @@ function App() {
     <div className="app">
       {/* En-tête : affiche toujours le nombre TOTAL de clients */}
       <Header totalClients={clients.length} />
+
+      {/* Bandeau d'alerte orange si des doublons de téléphone existent (aucune suppression automatique) */}
+      {doublonsTelephone.length > 0 && (
+        <section className="duplicate-banner" role="alert">
+          <p className="duplicate-banner-title">
+            {doublonsTelephone.length} doublon(s) de téléphone détecté(s)
+          </p>
+          <p className="duplicate-banner-text">
+            Aucun client n&apos;a été supprimé. Modifiez ou supprimez les fiches
+            concernées ci-dessous :
+          </p>
+          <ul className="duplicate-banner-list">
+            {doublonsTelephone.map((groupe) => (
+              <li key={groupe.numero}>
+                <strong>{formaterTelephone(groupe.numero)}</strong> :{' '}
+                {groupe.clients
+                  .map((client) => `${client.nom} ${client.prenom}`)
+                  .join(', ')}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* Formulaire d'ajout ou de modification d'un client.
           La prop key permet à React de réinitialiser proprement les champs quand on change de client édité. */}
@@ -281,7 +342,7 @@ function App() {
       />
 
       {/* Pied de page de l'application */}
-      <footer className="footer">MiniGest v1.2 — Patrick Kassi</footer>
+      <footer className="footer">MiniGest v1.3 — Patrick Kassi</footer>
     </div>
   );
 }
