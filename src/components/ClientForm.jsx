@@ -12,7 +12,9 @@ function ClientForm({
   clients,
   clientEnEdition,
   messageSucces,
+  erreurServeur = '',
   onEffacerMessageSucces,
+  onEffacerErreurServeur,
   onAjouterClient,
   onModifierClient,
   onAnnulerEdition,
@@ -42,6 +44,9 @@ function ClientForm({
   // State contenant les messages d'erreur par champ (ex. { nom: "Le nom est obligatoire" })
   const [erreurs, setErreurs] = useState({});
 
+  // Évite les doubles clics pendant l'enregistrement dans Supabase
+  const [envoiEnCours, setEnvoiEnCours] = useState(false);
+
   // Indique si la note dépasse la limite de 500 caractères (valeur calculée)
   const noteTropLongue = note.length > NOTE_LONGUEUR_MAX;
 
@@ -55,12 +60,19 @@ function ClientForm({
     if (messageSucces) {
       onEffacerMessageSucces();
     }
+    if (erreurServeur && onEffacerErreurServeur) {
+      onEffacerErreurServeur();
+    }
   }
 
   // Fonction appelée lors de la soumission du formulaire (ajout ou modification)
-  function gererSoumission(event) {
+  async function gererSoumission(event) {
     // Empêche le navigateur de recharger la page
     event.preventDefault();
+
+    if (envoiEnCours) {
+      return;
+    }
 
     // En mode modification, on ignore l'id du client en cours pour lui permettre de garder son numéro
     const idIgnore = clientEnEdition ? clientEnEdition.id : null;
@@ -79,25 +91,32 @@ function ClientForm({
       return;
     }
 
-    if (enModeEdition) {
-      // Enregistre les modifications en conservant l'id et la dateAjout du client
-      onModifierClient({
-        ...clientEnEdition,
-        ...donneesPropres,
-      });
-    } else {
-      // Envoie les données nettoyées et formatées au composant parent (App)
-      onAjouterClient(donneesPropres);
+    setEnvoiEnCours(true);
 
-      // Vide tous les champs et les erreurs après un ajout réussi
-      setNom('');
-      setPrenom('');
-      setTelephone('');
-      setEmail('');
-      setVille('');
-      setStatut(STATUT_PAR_DEFAUT);
-      setNote('');
-      setErreurs({});
+    try {
+      if (enModeEdition) {
+        // Enregistre les modifications dans Supabase en conservant l'id UUID d'origine
+        await onModifierClient({
+          ...clientEnEdition,
+          ...donneesPropres,
+        });
+      } else {
+        // Envoie les données nettoyées à EspaceClients ; on ne vide les champs que si l'ajout réussit
+        const reussi = await onAjouterClient(donneesPropres);
+
+        if (reussi) {
+          setNom('');
+          setPrenom('');
+          setTelephone('');
+          setEmail('');
+          setVille('');
+          setStatut(STATUT_PAR_DEFAUT);
+          setNote('');
+          setErreurs({});
+        }
+      }
+    } finally {
+      setEnvoiEnCours(false);
     }
   }
 
@@ -248,8 +267,12 @@ function ClientForm({
         </div>
 
         <div className="form-actions">
-          <button type="submit" className="btn-primary">
-            {enModeEdition ? 'Enregistrer les modifications' : 'Ajouter'}
+          <button type="submit" className="btn-primary" disabled={envoiEnCours}>
+            {envoiEnCours
+              ? 'Enregistrement...'
+              : enModeEdition
+                ? 'Enregistrer les modifications'
+                : 'Ajouter'}
           </button>
 
           {/* Bouton Annuler affiché uniquement en mode modification */}
@@ -258,11 +281,19 @@ function ClientForm({
               type="button"
               className="btn-secondary"
               onClick={onAnnulerEdition}
+              disabled={envoiEnCours}
             >
               Annuler
             </button>
           )}
         </div>
+
+        {/* Message d'erreur renvoyé par Supabase (ex. doublon 23505 ou Action non autorisée) */}
+        {erreurServeur && (
+          <p className="auth-error-banner" role="alert">
+            {erreurServeur}
+          </p>
+        )}
 
         {/* Message affiché uniquement si messageSucces contient du texte */}
         {messageSucces && <p className="success-message">{messageSucces}</p>}

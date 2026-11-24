@@ -33,6 +33,7 @@ function ClientList({
   onChangerTri,
   idClientEnEdition,
   bilanImport,
+  importEnCours = false,
   onEditerClient,
   onSupprimerClient,
   onExporterCSV,
@@ -97,8 +98,29 @@ function ClientList({
     );
   }
 
-  // Détermine le style visuel du bilan d'import (rouge = erreur, vert = tout importé, orange = lignes ignorées ou avertissements)
+  // Détermine le style visuel du bilan d'import (rouge = erreur, vert = tout importé, orange = lignes refusées ou avertissements)
   const avertissements = bilanImport?.avertissements ?? [];
+  const nbDoublons = bilanImport?.nbDoublons ?? 0;
+  const nbAutresIgnorees = Math.max(
+    0,
+    (bilanImport?.lignesIgnorees?.length ?? 0) - nbDoublons
+  );
+
+  // Résumé lisible du bilan : X importé(s), Y refusé(s) (doublons), plus les éventuelles lignes invalides
+  let resumeBilanImport = '';
+  if (bilanImport) {
+    if (bilanImport.erreur) {
+      resumeBilanImport =
+        bilanImport.nbImportes > 0
+          ? `${bilanImport.erreur} (${bilanImport.nbImportes} importé(s), ${nbDoublons} refusé(s) (doublons))`
+          : bilanImport.erreur;
+    } else if (nbAutresIgnorees > 0) {
+      resumeBilanImport = `${bilanImport.nbImportes} importé(s), ${nbDoublons} refusé(s) (doublons), ${nbAutresIgnorees} autre(s) ligne(s) ignorée(s)`;
+    } else {
+      resumeBilanImport = `${bilanImport.nbImportes} importé(s), ${nbDoublons} refusé(s) (doublons)`;
+    }
+  }
+
   let classeBilan = 'import-report-success';
   if (bilanImport?.erreur) {
     classeBilan = 'import-report-error';
@@ -131,8 +153,9 @@ function ClientList({
             type="button"
             className="btn-secondary btn-csv"
             onClick={ouvrirSelecteurFichier}
+            disabled={importEnCours}
           >
-            Importer (CSV)
+            {importEnCours ? 'Import en cours...' : 'Importer (CSV)'}
           </button>
 
           {/* Champ fichier caché déclenché par le bouton "Importer (CSV)" */}
@@ -141,6 +164,7 @@ function ClientList({
             type="file"
             accept=".csv,text/csv"
             className="sr-only"
+            disabled={importEnCours}
             onChange={gererChoixFichier}
           />
         </div>
@@ -178,11 +202,7 @@ function ClientList({
       {bilanImport && (
         <div className={`import-report ${classeBilan}`} role="status">
           <div className="import-report-header">
-            <p className="import-report-summary">
-              {bilanImport.erreur
-                ? bilanImport.erreur
-                : `${bilanImport.nbImportes} client(s) importé(s), ${bilanImport.lignesIgnorees.length} ligne(s) ignorée(s)`}
-            </p>
+            <p className="import-report-summary">{resumeBilanImport}</p>
             <button
               type="button"
               className="btn-close-report"
@@ -192,22 +212,21 @@ function ClientList({
             </button>
           </div>
 
-          {!bilanImport.erreur &&
-            (avertissements.length > 0 ||
-              bilanImport.lignesIgnorees.length > 0) && (
-              <ul className="import-report-list">
-                {avertissements.map((avertissement, index) => (
-                  <li key={`avert-${avertissement.numeroLigne}-${index}`}>
-                    Ligne {avertissement.numeroLigne} : {avertissement.message}
-                  </li>
-                ))}
-                {bilanImport.lignesIgnorees.map((ligne, index) => (
-                  <li key={`ignore-${ligne.numeroLigne}-${index}`}>
-                    Ligne {ligne.numeroLigne} : {ligne.raison}
-                  </li>
-                ))}
-              </ul>
-            )}
+          {(avertissements.length > 0 ||
+            bilanImport.lignesIgnorees.length > 0) && (
+            <ul className="import-report-list">
+              {avertissements.map((avertissement, index) => (
+                <li key={`avert-${avertissement.numeroLigne}-${index}`}>
+                  Ligne {avertissement.numeroLigne} : {avertissement.message}
+                </li>
+              ))}
+              {bilanImport.lignesIgnorees.map((ligne, index) => (
+                <li key={`ignore-${ligne.numeroLigne}-${index}`}>
+                  Ligne {ligne.numeroLigne} : {ligne.raison}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 

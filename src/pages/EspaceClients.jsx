@@ -1,13 +1,19 @@
-// Espace clients (v1.8 déplacée telle quelle sur la route /app, toujours en localStorage pour cette étape)
+// Espace clients connecté à Supabase (table public.clients protégée par RLS).
 import { useState, useEffect } from 'react';
 import Header from '../components/Header.jsx';
 import Dashboard from '../components/Dashboard.jsx';
 import ClientForm from '../components/ClientForm.jsx';
 import SearchBar from '../components/SearchBar.jsx';
 import ClientList from '../components/ClientList.jsx';
+import { supabase } from '../lib/supabaseClient.js';
+import { useAuth } from '../context/useAuth.js';
 import {
-  chargerClients,
-  sauvegarderClients,
+  COLONNES_CLIENT_SUPABASE,
+  clientDepuisSupabase,
+  clientVersInsertSupabase,
+  clientVersUpdateSupabase,
+} from '../utils/mappingClients.js';
+import {
   chargerVisibiliteDashboard,
   sauvegarderVisibiliteDashboard,
   chargerTri,
@@ -19,6 +25,7 @@ import { validerClient } from '../utils/validation.js';
 import {
   formaterTelephone,
   nettoyerRechercheTelephone,
+  normaliserTelephone,
 } from '../utils/telephone.js';
 import {
   exporterCSV,
@@ -31,6 +38,23 @@ import {
   trierClients,
 } from '../utils/tri.js';
 import { normaliserParPage, paginer } from '../utils/pagination.js';
+
+// Traduit les erreurs PostgreSQL / Supabase courantes en messages français clairs
+function traduireErreurSupabase(erreur, messageParDefaut) {
+  if (!erreur) {
+    return messageParDefaut;
+  }
+
+  if (erreur.code === '23505') {
+    return 'Ce numéro de téléphone existe déjà dans votre entreprise.';
+  }
+
+  if (erreur.code === '42501') {
+    return 'Action non autorisée';
+  }
+
+  return messageParDefaut;
+}
 
 // Supprime les accents et met le texte en minuscules pour comparer facilement
 function normaliserTexte(texte) {
@@ -88,8 +112,28 @@ function filtrerClients(listeClients, recherche, filtreStatut) {
 }
 
 function EspaceClients() {
-  // Charge la liste des clients depuis localStorage une seule fois au démarrage
-  const [clients, setClients] = useState(() => chargerClients());
+  const { session, profil, chargement: chargementProfil } = useAuth();
+
+  // Indique que le profil métier et l'utilisateur connecté sont prêts avant tout appel Supabase
+  const profilPret =
+    !chargementProfil &&
+    Boolean(profil?.entreprise_id) &&
+    Boolean(session?.user?.id);
+
+  // Liste des clients chargés depuis public.clients (plus aucun localStorage pour les clients)
+  const [clients, setClients] = useState([]);
+
+  // État de chargement initial et message d'erreur éventuel lors de la lecture
+  const [chargementClients, setChargementClients] = useState(true);
+  const [erreurChargement, setErreurChargement] = useState('');
+  const [compteurRechargement, setCompteurRechargement] = useState(0);
+
+  // Messages d'erreur pour le formulaire (ajout/modification) et les actions (suppression)
+  const [erreurFormulaire, setErreurFormulaire] = useState('');
+  const [erreurAction, setErreurAction] = useState('');
+
+  // Indique si un import CSV est en cours d'enregistrement dans Supabase
+  const [importEnCours, setImportEnCours] = useState(false);
 
   // State contenant le texte tapé dans la barre de recherche
   const [recherche, setRecherche] = useState('');
@@ -106,24 +150,73 @@ function EspaceClients() {
   // State pour afficher le bilan (ou l'erreur) après un import CSV
   const [bilanImport, setBilanImport] = useState(null);
 
-  // State pour afficher ou masquer le tableau de bord (mémorisé dans localStorage)
+  // Préférences d'affichage conservées dans localStorage (tableau de bord, tri, pagination)
   const [dashboardVisible, setDashboardVisible] = useState(() =>
     chargerVisibiliteDashboard()
   );
-
-  // State pour mémoriser la colonne et le sens de tri actifs (mémorisé dans localStorage)
   const [tri, setTri] = useState(() => chargerTri());
-
-  // State pour le nombre de clients affichés par page (mémorisé dans localStorage, 10 par défaut)
   const [parPage, setParPage] = useState(() => chargerParPage());
 
   // State pour la page courante (non mémorisé : on revient toujours en page 1 à l'ouverture)
   const [pageCourante, setPageCourante] = useState(1);
 
-  // Sauvegarde automatiquement dans localStorage à chaque modification de la liste
+  // Chargement des clients depuis public.clients dès que le profil est chargé.
+  // IMPORTANT : aucun filtre .eq('entreprise_id', ...) côté React : la RLS filtre déjà par entreprise.
   useEffect(() => {
-    sauvegarderClients(clients);
-  }, [clients]);
+    if (!profilPret) {
+      return;
+    }
+
+    let estActif = true;
+
+    async function chargerClientsDepuisSupabase() {
+      setChargementClients(true);
+      setErreurChargement('');
+
+      try {
+        const { data, error } = await supabase
+          .from('clients')
+          .select(COLONNES_CLIENT_SUPABASE)
+          .order('date_ajout', { ascending: false });
+
+        if (!estActif) {
+          return;
+        }
+
+        if (error) {
+          setClients([]);
+          setErreurChargement(
+            traduireErreurSupabase(
+              error,
+              'Impossible de charger la liste des clients. Veuillez réessayer.'
+            )
+          );
+        } else {
+          // Convertit chaque ligne snake_case (date_ajout) vers le format attendu par l'application
+          const clientsConvertis = (data ?? []).map(clientDepuisSupabase);
+          setClients(clientsConvertis);
+        }
+      } catch {
+        if (!estActif) {
+          return;
+        }
+        setClients([]);
+        setErreurChargement(
+          'Erreur réseau lors du chargement des clients. Vérifiez votre connexion.'
+        );
+      } finally {
+        if (estActif) {
+          setChargementClients(false);
+        }
+      }
+    }
+
+    chargerClientsDepuisSupabase();
+
+    return () => {
+      estActif = false;
+    };
+  }, [profilPret, profil?.id, compteurRechargement]);
 
   // Mémorise automatiquement le choix d'affichage du tableau de bord
   useEffect(() => {
@@ -170,52 +263,104 @@ function EspaceClients() {
     setPageCourante(1);
   }
 
-  // Ajoute un nouveau client en lui générant un identifiant unique et la date d'ajout,
-  // puis affiche directement la page où ce nouveau client apparaît
-  function ajouterClient(donneesClient) {
-    const nouveauClient = {
-      id: crypto.randomUUID(),
-      ...donneesClient,
-      dateAjout: new Date().toISOString(),
-    };
-
-    // On crée un nouveau tableau sans modifier le state directement
-    const nouvelleListe = [...clients, nouveauClient];
-    setClients(nouvelleListe);
-
-    // Si le nouveau client ne correspond pas au filtre de statut actif, on repasse sur "Tous" pour le rendre visible
-    const nouveauFiltreStatut =
-      filtreStatut !== 'Tous' && nouveauClient.statut !== filtreStatut
-        ? 'Tous'
-        : filtreStatut;
-
-    if (nouveauFiltreStatut !== filtreStatut) {
-      setFiltreStatut(nouveauFiltreStatut);
+  // Ajoute un nouveau client dans Supabase (id UUID et date_ajout générés par la base),
+  // puis met à jour le state sans recharger la page.
+  async function ajouterClient(donneesClient) {
+    if (!profilPret) {
+      setErreurFormulaire('Action non autorisée');
+      return false;
     }
 
-    // Calcule la position du client ajouté après recherche, filtre et tri pour aller sur sa page
-    const listeFiltree = filtrerClients(
-      nouvelleListe,
-      recherche,
-      nouveauFiltreStatut
-    );
-    const listeTriee = trierClients(listeFiltree, tri);
-    const indexNouveauClient = listeTriee.findIndex(
-      (client) => client.id === nouveauClient.id
-    );
+    setErreurFormulaire('');
+    setErreurAction('');
+    setMessageSucces('');
 
-    if (indexNouveauClient !== -1) {
-      const pageDuNouveauClient = Math.floor(indexNouveauClient / parPage) + 1;
-      setPageCourante(pageDuNouveauClient);
+    // Vérifie et normalise explicitement le téléphone avant l'envoi vers Supabase
+    const { numero: telephoneNormalise, erreur: erreurTel } =
+      normaliserTelephone(donneesClient.telephone);
+    if (erreurTel) {
+      setErreurFormulaire(erreurTel);
+      return false;
     }
 
-    setMessageSucces('Client ajouté avec succès');
+    const ligneAInserer = clientVersInsertSupabase(
+      {
+        ...donneesClient,
+        telephone: telephoneNormalise,
+      },
+      profil.entreprise_id,
+      session.user.id
+    );
+
+    try {
+      const { data, error } = await supabase
+        .from('clients')
+        .insert(ligneAInserer)
+        .select(COLONNES_CLIENT_SUPABASE);
+
+      if (error) {
+        setErreurFormulaire(
+          traduireErreurSupabase(
+            error,
+            "Impossible d'ajouter le client. Veuillez réessayer."
+          )
+        );
+        return false;
+      }
+
+      if (!data || data.length === 0) {
+        setErreurFormulaire('Action non autorisée');
+        return false;
+      }
+
+      const nouveauClient = clientDepuisSupabase(data[0]);
+
+      // On crée un nouveau tableau sans modifier le state directement
+      const nouvelleListe = [...clients, nouveauClient];
+      setClients(nouvelleListe);
+
+      // Si le nouveau client ne correspond pas au filtre de statut actif, on repasse sur "Tous" pour le rendre visible
+      const nouveauFiltreStatut =
+        filtreStatut !== 'Tous' && nouveauClient.statut !== filtreStatut
+          ? 'Tous'
+          : filtreStatut;
+
+      if (nouveauFiltreStatut !== filtreStatut) {
+        setFiltreStatut(nouveauFiltreStatut);
+      }
+
+      // Calcule la position du client ajouté après recherche, filtre et tri pour aller sur sa page
+      const listeFiltree = filtrerClients(
+        nouvelleListe,
+        recherche,
+        nouveauFiltreStatut
+      );
+      const listeTriee = trierClients(listeFiltree, tri);
+      const indexNouveauClient = listeTriee.findIndex(
+        (client) => client.id === nouveauClient.id
+      );
+
+      if (indexNouveauClient !== -1) {
+        const pageDuNouveauClient = Math.floor(indexNouveauClient / parPage) + 1;
+        setPageCourante(pageDuNouveauClient);
+      }
+
+      setMessageSucces('Client ajouté avec succès');
+      return true;
+    } catch {
+      setErreurFormulaire(
+        "Erreur réseau lors de l'ajout du client. Vérifiez votre connexion."
+      );
+      return false;
+    }
   }
 
   // Passe le formulaire en mode modification pour le client sélectionné et remonte vers le formulaire
   function demarrerEdition(client) {
     setClientEnEdition(client);
     setMessageSucces('');
+    setErreurFormulaire('');
+    setErreurAction('');
 
     const formulaire = document.getElementById('formulaire-client');
     if (formulaire) {
@@ -229,79 +374,162 @@ function EspaceClients() {
   function annulerEdition() {
     setClientEnEdition(null);
     setMessageSucces('');
+    setErreurFormulaire('');
   }
 
-  // Met à jour un seul client dans la liste grâce à map(), sans modifier le state directement
-  function modifierClient(clientModifie) {
-    const nouvelleListe = clients.map((client) => {
-      if (client.id === clientModifie.id) {
-        // On remplace uniquement les champs modifiés tout en conservant l'id et la dateAjout d'origine
-        return {
-          ...client,
-          ...clientModifie,
-          id: client.id,
-          dateAjout: client.dateAjout,
-        };
-      }
-      return client;
+  // Met à jour un client dans Supabase (via son id UUID) puis dans le state avec map()
+  async function modifierClient(clientModifie) {
+    if (!profilPret) {
+      setErreurFormulaire('Action non autorisée');
+      return false;
+    }
+
+    setErreurFormulaire('');
+    setErreurAction('');
+    setMessageSucces('');
+
+    // Normalise explicitement le téléphone avant l'envoi pour la contrainte unique en base
+    const { numero: telephoneNormalise, erreur: erreurTel } =
+      normaliserTelephone(clientModifie.telephone);
+    if (erreurTel) {
+      setErreurFormulaire(erreurTel);
+      return false;
+    }
+
+    // Ne contient que les colonnes éditables (jamais date_ajout, cree_par ni entreprise_id)
+    const champsModifies = clientVersUpdateSupabase({
+      ...clientModifie,
+      telephone: telephoneNormalise,
     });
 
-    setClients(nouvelleListe);
+    try {
+      const { data, error } = await supabase
+        .from('clients')
+        .update(champsModifies)
+        .eq('id', clientModifie.id)
+        .select(COLONNES_CLIENT_SUPABASE);
 
-    // Si le client modifié ne correspond plus au filtre de statut actif, on repasse sur "Tous" pour le garder visible
-    const nouveauFiltreStatut =
-      filtreStatut !== 'Tous' && clientModifie.statut !== filtreStatut
-        ? 'Tous'
-        : filtreStatut;
+      if (error) {
+        setErreurFormulaire(
+          traduireErreurSupabase(
+            error,
+            'Impossible de modifier ce client. Veuillez réessayer.'
+          )
+        );
+        return false;
+      }
 
-    if (nouveauFiltreStatut !== filtreStatut) {
-      setFiltreStatut(nouveauFiltreStatut);
+      // 0 ligne modifiée signifie un refus de droits RLS ou une fiche introuvable
+      if (!data || data.length === 0) {
+        setErreurFormulaire('Action non autorisée');
+        return false;
+      }
+
+      const clientMisAJour = clientDepuisSupabase(data[0]);
+
+      // Remplace uniquement le client modifié sans jamais muter le state directement
+      const nouvelleListe = clients.map((client) =>
+        client.id === clientMisAJour.id ? clientMisAJour : client
+      );
+      setClients(nouvelleListe);
+
+      // Si le client modifié ne correspond plus au filtre de statut actif, on repasse sur "Tous" pour le garder visible
+      const nouveauFiltreStatut =
+        filtreStatut !== 'Tous' && clientMisAJour.statut !== filtreStatut
+          ? 'Tous'
+          : filtreStatut;
+
+      if (nouveauFiltreStatut !== filtreStatut) {
+        setFiltreStatut(nouveauFiltreStatut);
+      }
+
+      // Si la page courante n'existe plus après modification (ex. recherche active), on recale sur la dernière page
+      const listeFiltreeApresModif = filtrerClients(
+        nouvelleListe,
+        recherche,
+        nouveauFiltreStatut
+      );
+      const nouveauTotalPages = Math.max(
+        1,
+        Math.ceil(listeFiltreeApresModif.length / parPage)
+      );
+      if (pageCourante > nouveauTotalPages) {
+        setPageCourante(nouveauTotalPages);
+      }
+
+      // Retourne au mode ajout avec le message de confirmation
+      setClientEnEdition(null);
+      setMessageSucces('Client modifié avec succès');
+      return true;
+    } catch {
+      setErreurFormulaire(
+        'Erreur réseau lors de la modification du client. Vérifiez votre connexion.'
+      );
+      return false;
     }
-
-    // Si la page courante n'existe plus après modification (ex. recherche active), on recale sur la dernière page
-    const listeFiltreeApresModif = filtrerClients(
-      nouvelleListe,
-      recherche,
-      nouveauFiltreStatut
-    );
-    const nouveauTotalPages = Math.max(
-      1,
-      Math.ceil(listeFiltreeApresModif.length / parPage)
-    );
-    if (pageCourante > nouveauTotalPages) {
-      setPageCourante(nouveauTotalPages);
-    }
-
-    // Retourne au mode ajout avec le message de confirmation
-    setClientEnEdition(null);
-    setMessageSucces('Client modifié avec succès');
   }
 
-  // Supprime le client correspondant à l'identifiant donné grâce à filter()
-  function supprimerClient(id) {
-    // filter() renvoie un nouveau tableau contenant tous les clients sauf celui à supprimer
-    const nouvelleListe = clients.filter((client) => client.id !== id);
-    setClients(nouvelleListe);
-
-    // Si la page courante n'existe plus (ex. suppression du dernier client de la dernière page),
-    // on revient automatiquement à la dernière page existante
-    const listeFiltreeApresSuppression = filtrerClients(
-      nouvelleListe,
-      recherche,
-      filtreStatut
-    );
-    const nouveauTotalPages = Math.max(
-      1,
-      Math.ceil(listeFiltreeApresSuppression.length / parPage)
-    );
-    if (pageCourante > nouveauTotalPages) {
-      setPageCourante(nouveauTotalPages);
+  // Supprime un client dans Supabase (via son id UUID) puis met à jour le state avec filter()
+  async function supprimerClient(id) {
+    if (!profilPret) {
+      setErreurAction('Action non autorisée');
+      return;
     }
 
-    // Si le client supprimé était en cours de modification, on quitte le mode édition
-    if (clientEnEdition && clientEnEdition.id === id) {
-      setClientEnEdition(null);
-      setMessageSucces('');
+    setErreurAction('');
+
+    try {
+      const { data, error } = await supabase
+        .from('clients')
+        .delete()
+        .eq('id', id)
+        .select('id');
+
+      if (error) {
+        setErreurAction(
+          traduireErreurSupabase(
+            error,
+            'Impossible de supprimer ce client. Veuillez réessayer.'
+          )
+        );
+        return;
+      }
+
+      // 0 ligne supprimée : refus de droits RLS ou fiche déjà supprimée
+      if (!data || data.length === 0) {
+        setErreurAction('Action non autorisée');
+        return;
+      }
+
+      // filter() renvoie un nouveau tableau contenant tous les clients sauf celui supprimé
+      const nouvelleListe = clients.filter((client) => client.id !== id);
+      setClients(nouvelleListe);
+
+      // Si la page courante n'existe plus (ex. suppression du dernier client de la dernière page),
+      // on revient automatiquement à la dernière page existante
+      const listeFiltreeApresSuppression = filtrerClients(
+        nouvelleListe,
+        recherche,
+        filtreStatut
+      );
+      const nouveauTotalPages = Math.max(
+        1,
+        Math.ceil(listeFiltreeApresSuppression.length / parPage)
+      );
+      if (pageCourante > nouveauTotalPages) {
+        setPageCourante(nouveauTotalPages);
+      }
+
+      // Si le client supprimé était en cours de modification, on quitte le mode édition
+      if (clientEnEdition && clientEnEdition.id === id) {
+        setClientEnEdition(null);
+        setMessageSucces('');
+        setErreurFormulaire('');
+      }
+    } catch {
+      setErreurAction(
+        'Erreur réseau lors de la suppression du client. Vérifiez votre connexion.'
+      );
     }
   }
 
@@ -326,11 +554,14 @@ function EspaceClients() {
     URL.revokeObjectURL(url);
   }
 
-  // Lit un fichier CSV choisi par l'utilisateur, valide chaque ligne et ajoute les clients valides
+  // Lit un fichier CSV, normalise les téléphones, écarte les doublons connus avant l'envoi,
+  // insère le reste en lot dans Supabase et bascule ligne par ligne en cas d'erreur 23505.
   function importerClientsCSV(fichier) {
-    if (!fichier) {
+    if (!fichier || !profilPret || importEnCours) {
       return;
     }
+
+    setErreurAction('');
 
     const lecteur = new FileReader();
 
@@ -339,12 +570,13 @@ function EspaceClients() {
         erreur:
           "Impossible de lire ce fichier. Vérifiez qu'il s'agit bien d'un fichier CSV valide.",
         nbImportes: 0,
+        nbDoublons: 0,
         lignesIgnorees: [],
         avertissements: [],
       });
     };
 
-    lecteur.onload = () => {
+    lecteur.onload = async () => {
       const texte = typeof lecteur.result === 'string' ? lecteur.result : '';
       const resultat = importerCSV(texte);
 
@@ -353,18 +585,33 @@ function EspaceClients() {
         setBilanImport({
           erreur: resultat.erreur,
           nbImportes: 0,
+          nbDoublons: 0,
           lignesIgnorees: [],
           avertissements: [],
         });
         return;
       }
 
-      // Copie de référence pour détecter les doublons aussi bien avec la liste existante qu'au sein du fichier
-      const clientsDeReference = [...clients];
-      const nouveauxClients = [];
+      // Étape a) Normalisation des téléphones déjà chargés pour cette entreprise
+      const telephonesExistants = new Set();
+      for (const client of clients) {
+        const resExistant = normaliserTelephone(client.telephone);
+        const numeroNormalise = resExistant.erreur
+          ? String(client.telephone ?? '').trim()
+          : resExistant.numero;
+        if (numeroNormalise) {
+          telephonesExistants.add(numeroNormalise);
+        }
+      }
+
+      // Ensemble des téléphones déjà rencontrés dans ce fichier CSV (doublons internes)
+      const telephonesDansFichier = new Set();
+      const candidatsAInserer = [];
       const lignesIgnorees = [];
       const avertissements = [];
+      let nbDoublons = 0;
 
+      // Étape b) Validation de chaque ligne et filtrage des doublons avant tout envoi
       for (const ligne of resultat.lignes) {
         if (ligne.tropDeColonnes) {
           lignesIgnorees.push({
@@ -382,11 +629,8 @@ function EspaceClients() {
           continue;
         }
 
-        // Chaque ligne passe par la même fonction validerClient que le formulaire
-        const { erreurs, donneesPropres } = validerClient(
-          ligne,
-          clientsDeReference
-        );
+        // Validation de format/obligatoires (le contrôle des doublons se fait juste après avec les numéros normalisés)
+        const { erreurs, donneesPropres } = validerClient(ligne, []);
         const messagesErreurs = Object.values(erreurs);
 
         if (messagesErreurs.length > 0) {
@@ -397,6 +641,37 @@ function EspaceClients() {
           continue;
         }
 
+        // Normalisation explicite avec telephone.js
+        const { numero: telephoneNormalise, erreur: erreurTel } =
+          normaliserTelephone(donneesPropres.telephone);
+        if (erreurTel) {
+          lignesIgnorees.push({
+            numeroLigne: ligne.numeroLigne,
+            raison: erreurTel,
+          });
+          continue;
+        }
+
+        if (telephonesExistants.has(telephoneNormalise)) {
+          nbDoublons += 1;
+          lignesIgnorees.push({
+            numeroLigne: ligne.numeroLigne,
+            raison: `Doublon de téléphone (${formaterTelephone(telephoneNormalise)}) déjà enregistré`,
+          });
+          continue;
+        }
+
+        if (telephonesDansFichier.has(telephoneNormalise)) {
+          nbDoublons += 1;
+          lignesIgnorees.push({
+            numeroLigne: ligne.numeroLigne,
+            raison: `Doublon de téléphone (${formaterTelephone(telephoneNormalise)}) présent plusieurs fois dans le fichier`,
+          });
+          continue;
+        }
+
+        telephonesDansFichier.add(telephoneNormalise);
+
         // Si le statut du CSV était inconnu, on a appliqué "Client" par défaut et on le signale dans le bilan
         if (ligne.statutInconnu) {
           avertissements.push({
@@ -405,24 +680,124 @@ function EspaceClients() {
           });
         }
 
-        const nouveauClient = {
-          id: crypto.randomUUID(),
-          ...donneesPropres,
-          dateAjout: ligne.dateAjout,
-        };
+        // Prépare l'objet Supabase (sans id ni date_ajout : valeurs par défaut PostgreSQL)
+        const payload = clientVersInsertSupabase(
+          {
+            ...donneesPropres,
+            telephone: telephoneNormalise,
+          },
+          profil.entreprise_id,
+          session.user.id
+        );
 
-        nouveauxClients.push(nouveauClient);
-        clientsDeReference.push(nouveauClient);
+        candidatsAInserer.push({
+          numeroLigne: ligne.numeroLigne,
+          telephone: telephoneNormalise,
+          payload,
+        });
       }
 
-      // On ajoute les clients importés à la liste existante sans jamais remplacer ni modifier le state directement
-      if (nouveauxClients.length > 0) {
-        setClients([...clients, ...nouveauxClients]);
+      // Aucune ligne valide à envoyer : on affiche directement le bilan sans requête inutile
+      if (candidatsAInserer.length === 0) {
+        lignesIgnorees.sort((a, b) => a.numeroLigne - b.numeroLigne);
+        setBilanImport({
+          erreur: null,
+          nbImportes: 0,
+          nbDoublons,
+          lignesIgnorees,
+          avertissements,
+        });
+        return;
       }
+
+      setImportEnCours(true);
+
+      let nbImportes = 0;
+      let erreurImport = null;
+
+      try {
+        // Étape c) Insertion en lot des lignes restantes
+        const { data, error } = await supabase
+          .from('clients')
+          .insert(candidatsAInserer.map((candidat) => candidat.payload))
+          .select(COLONNES_CLIENT_SUPABASE);
+
+        if (!error) {
+          const clientsInseres = (data ?? []).map(clientDepuisSupabase);
+          if (clientsInseres.length === 0) {
+            erreurImport = 'Action non autorisée';
+          } else {
+            // Met à jour le state sans jamais le modifier directement
+            setClients((listeActuelle) => [
+              ...listeActuelle,
+              ...clientsInseres,
+            ]);
+            nbImportes = clientsInseres.length;
+          }
+        } else if (error.code === '23505') {
+          // Étape d) Un doublon est survenu en base (ex. ajout simultané par un collègue) :
+          // le lot PostgreSQL a été annulé, on réessaie ligne par ligne pour isoler les lignes refusées.
+          const clientsInseresLigneParLigne = [];
+
+          for (const candidat of candidatsAInserer) {
+            const { data: dataLigne, error: erreurLigne } = await supabase
+              .from('clients')
+              .insert(candidat.payload)
+              .select(COLONNES_CLIENT_SUPABASE);
+
+            if (erreurLigne) {
+              if (erreurLigne.code === '23505') {
+                nbDoublons += 1;
+                lignesIgnorees.push({
+                  numeroLigne: candidat.numeroLigne,
+                  raison: `Doublon de téléphone (${formaterTelephone(candidat.telephone)}) déjà présent en base`,
+                });
+              } else if (erreurLigne.code === '42501') {
+                erreurImport = 'Action non autorisée';
+                break;
+              } else {
+                lignesIgnorees.push({
+                  numeroLigne: candidat.numeroLigne,
+                  raison: "Impossible d'enregistrer cette ligne dans la base",
+                });
+              }
+            } else if (!dataLigne || dataLigne.length === 0) {
+              erreurImport = 'Action non autorisée';
+              break;
+            } else {
+              clientsInseresLigneParLigne.push(
+                clientDepuisSupabase(dataLigne[0])
+              );
+            }
+          }
+
+          if (clientsInseresLigneParLigne.length > 0) {
+            setClients((listeActuelle) => [
+              ...listeActuelle,
+              ...clientsInseresLigneParLigne,
+            ]);
+            nbImportes = clientsInseresLigneParLigne.length;
+          }
+        } else {
+          erreurImport = traduireErreurSupabase(
+            error,
+            "Impossible d'importer les clients. Veuillez réessayer."
+          );
+        }
+      } catch {
+        erreurImport =
+          "Erreur réseau lors de l'import CSV. Vérifiez votre connexion.";
+      } finally {
+        setImportEnCours(false);
+      }
+
+      // Trie les lignes refusées par numéro de ligne pour une lecture claire
+      lignesIgnorees.sort((a, b) => a.numeroLigne - b.numeroLigne);
 
       setBilanImport({
-        erreur: null,
-        nbImportes: nouveauxClients.length,
+        erreur: erreurImport,
+        nbImportes,
+        nbDoublons,
         lignesIgnorees,
         avertissements,
       });
@@ -431,7 +806,7 @@ function EspaceClients() {
     lecteur.readAsText(fichier, 'UTF-8');
   }
 
-  // Détecte les éventuels doublons de téléphone (ex. apparus après migration) sans rien supprimer
+  // Détecte les éventuels doublons de téléphone (affichage d'alerte sans rien supprimer)
   const groupesParTelephone = {};
   for (const client of clients) {
     const cleTelephone = String(client.telephone ?? '').trim();
@@ -465,10 +840,63 @@ function EspaceClients() {
   const clientsTries = trierClients(clientsFiltres, tri);
   const pagination = paginer(clientsTries, pageCourante, parPage);
 
+  // Écran d'attente tant que le profil ou la liste des clients est en cours de chargement
+  if (chargementProfil || !profilPret || chargementClients) {
+    return (
+      <div className="app">
+        <Header />
+        <section
+          className="card clients-status-card"
+          role="status"
+          aria-live="polite"
+        >
+          <p className="clients-loading-text">Chargement...</p>
+        </section>
+        <footer className="footer">MiniGest v2 — Patrick Kassi</footer>
+      </div>
+    );
+  }
+
+  // Écran d'erreur en français si la lecture initiale dans Supabase a échoué
+  if (erreurChargement) {
+    return (
+      <div className="app">
+        <Header />
+        <section className="card clients-status-card" role="alert">
+          <p className="auth-error-banner">{erreurChargement}</p>
+          <div className="clients-retry-actions">
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => setCompteurRechargement((compteur) => compteur + 1)}
+            >
+              Réessayer
+            </button>
+          </div>
+        </section>
+        <footer className="footer">MiniGest v2 — Patrick Kassi</footer>
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       {/* En-tête : affiche toujours le nombre TOTAL de clients */}
       <Header totalClients={clients.length} />
+
+      {/* Message d'erreur global pour les actions sur la liste (ex. suppression refusée) */}
+      {erreurAction && (
+        <section className="action-error-banner" role="alert">
+          <p className="action-error-text">{erreurAction}</p>
+          <button
+            type="button"
+            className="btn-close-report"
+            onClick={() => setErreurAction('')}
+          >
+            Fermer
+          </button>
+        </section>
+      )}
 
       {/* Bandeau d'alerte orange si des doublons de téléphone existent (aucune suppression automatique) */}
       {doublonsTelephone.length > 0 && (
@@ -501,13 +929,15 @@ function EspaceClients() {
       />
 
       {/* Formulaire d'ajout ou de modification d'un client.
-          La prop key permet à React de réinitialiser proprement les champs quand on change de client édité. */}
+          La prop key utilise l'id UUID renvoyé par Supabase pour réinitialiser proprement les champs. */}
       <ClientForm
         key={clientEnEdition ? clientEnEdition.id : 'ajout'}
         clients={clients}
         clientEnEdition={clientEnEdition}
         messageSucces={messageSucces}
+        erreurServeur={erreurFormulaire}
         onEffacerMessageSucces={() => setMessageSucces('')}
+        onEffacerErreurServeur={() => setErreurFormulaire('')}
         onAjouterClient={ajouterClient}
         onModifierClient={modifierClient}
         onAnnulerEdition={annulerEdition}
@@ -543,6 +973,7 @@ function EspaceClients() {
         onChangerTri={gererSelectionTri}
         idClientEnEdition={clientEnEdition ? clientEnEdition.id : null}
         bilanImport={bilanImport}
+        importEnCours={importEnCours}
         onEditerClient={demarrerEdition}
         onSupprimerClient={supprimerClient}
         onExporterCSV={exporterClientsCSV}
@@ -551,7 +982,7 @@ function EspaceClients() {
       />
 
       {/* Pied de page de l'application */}
-      <footer className="footer">MiniGest v1.8 — Patrick Kassi</footer>
+      <footer className="footer">MiniGest v2 — Patrick Kassi</footer>
     </div>
   );
 }

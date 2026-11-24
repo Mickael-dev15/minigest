@@ -251,6 +251,45 @@ body {
   font-size: 0.95rem;
 }
 
+/* États de chargement et d'erreur dans EspaceClients */
+.clients-status-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.clients-loading-text {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #12223a;
+}
+
+.clients-retry-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.action-error-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  background-color: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+  border-left: 5px solid #dc2626;
+  border-radius: 10px;
+}
+
+.action-error-text {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
 /* Bandeau orange d'alerte en cas de doublons de téléphone détectés */
 .duplicate-banner {
   background-color: #fff7ed;
