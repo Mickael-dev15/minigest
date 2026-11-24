@@ -47,6 +47,200 @@ body {
   color: #ffffff;
 }
 
+.header-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.header-user-info {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+  color: #cbd5e1;
+}
+
+.header-user-name {
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.header-user-separator {
+  color: #67e8f9;
+}
+
+.header-company-name {
+  color: #67e8f9;
+  font-weight: 600;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.btn-logout {
+  padding: 0.45rem 0.95rem;
+  background-color: transparent;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.btn-logout:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.12);
+  border-color: #67e8f9;
+}
+
+.btn-logout:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Écran de chargement pendant la vérification de session/profil */
+.loading-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.loading-text {
+  margin: 0;
+  padding: 0.85rem 1.5rem;
+  background-color: #ffffff;
+  color: #12223a;
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid #1ba8c4;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 1rem;
+  box-shadow: 0 2px 8px rgba(18, 34, 58, 0.06);
+}
+
+/* Pages d'authentification (Login et Accès refusé) */
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem 1rem;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 440px;
+  padding: 2rem 1.75rem;
+  border-top: 5px solid #12223a;
+}
+
+.auth-brand {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.auth-brand h1 {
+  margin: 0;
+  font-size: 2rem;
+  color: #12223a;
+  letter-spacing: 0.02em;
+}
+
+.auth-subtitle {
+  margin: 0.4rem 0 0;
+  font-size: 0.95rem;
+  color: #475569;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.auth-error-banner {
+  margin: 0;
+  padding: 0.75rem 0.95rem;
+  background-color: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.auth-submit-btn {
+  width: 100%;
+  margin-top: 0.25rem;
+}
+
+.auth-info-note {
+  margin: 1.25rem 0 0;
+  font-size: 0.84rem;
+  color: #64748b;
+  text-align: center;
+  line-height: 1.45;
+}
+
+/* Page Accès refusé */
+.access-denied-card {
+  border-top-color: #dc2626;
+}
+
+.access-denied-user {
+  margin: 0 0 0.75rem;
+  font-size: 0.92rem;
+  color: #334155;
+}
+
+.access-denied-message {
+  margin: 0 0 1rem;
+  font-size: 0.95rem;
+  color: #1f2937;
+  line-height: 1.5;
+}
+
+.access-denied-reason {
+  margin: 0 0 1.25rem;
+  padding: 0.75rem 0.95rem;
+  background-color: #fff7ed;
+  color: #9a3412;
+  border: 1px solid #fdba74;
+  border-left: 4px solid #ea580c;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.access-denied-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Page provisoire Super admin */
+.admin-placeholder-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.admin-placeholder-text {
+  margin: 0;
+  color: #334155;
+  font-size: 0.98rem;
+  line-height: 1.5;
+}
+
 .client-counter {
   margin: 0;
   padding: 0.45rem 1rem;
