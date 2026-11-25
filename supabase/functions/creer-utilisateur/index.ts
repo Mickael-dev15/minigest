@@ -270,6 +270,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       email_confirm: true,
       user_metadata: {
         nom_complet: nomComplet,
+        doit_changer_mdp: true,
       },
     });
 

@@ -138,3 +138,36 @@ export function validerClient(donnees, clients = [], idIgnore = null) {
 
   return { erreurs, donneesPropres };
 }
+
+// Longueur minimale requise pour un mot de passe choisi par l'utilisateur
+export const MOT_DE_PASSE_LONGUEUR_MIN = 8;
+
+// Règle unique de validation d'un nouveau mot de passe (réutilisée sur /reinitialisation et /changer-mot-de-passe) :
+// - 8 caractères minimum ;
+// - au moins une lettre et au moins un chiffre ;
+// - confirmation obligatoire et identique.
+export function validerNouveauMotDePasse(motDePasse, confirmation) {
+  const erreurs = {};
+  const mdp = typeof motDePasse === 'string' ? motDePasse : '';
+  const conf = typeof confirmation === 'string' ? confirmation : '';
+
+  if (mdp.length === 0) {
+    erreurs.motDePasse = 'Le nouveau mot de passe est obligatoire.';
+  } else if (mdp.length < MOT_DE_PASSE_LONGUEUR_MIN) {
+    erreurs.motDePasse = `Le mot de passe doit contenir au moins ${MOT_DE_PASSE_LONGUEUR_MIN} caractères.`;
+  } else if (!/\p{L}/u.test(mdp) || !/\d/.test(mdp)) {
+    erreurs.motDePasse =
+      'Le mot de passe doit contenir au moins une lettre et un chiffre.';
+  }
+
+  if (conf.length === 0) {
+    erreurs.confirmation = 'Veuillez confirmer votre nouveau mot de passe.';
+  } else if (conf !== mdp) {
+    erreurs.confirmation = 'Les deux mots de passe ne correspondent pas.';
+  }
+
+  return {
+    valide: Object.keys(erreurs).length === 0,
+    erreurs,
+  };
+}

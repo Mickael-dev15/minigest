@@ -1,7 +1,50 @@
 // Contexte d'authentification global : session Supabase + profil métier (rôle et entreprise).
+// Gère aussi la détection de la récupération de mot de passe (PASSWORD_RECOVERY)
+// et le drapeau doit_changer_mdp pour le changement obligatoire du mot de passe temporaire.
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient.js';
 import { AuthContext } from './useAuth.js';
+
+// Inspecte l'URL au tout début du chargement (avant que Supabase ne nettoie le hash ou la query)
+// pour détecter un lien de réinitialisation de mot de passe (flux implicite ou PKCE).
+function detecterRecuperationDansUrl() {
+  if (typeof window === 'undefined') {
+    return { lienDetecte: false, erreurUrl: false };
+  }
+
+  const paramsQuery = new URLSearchParams(window.location.search);
+  const hashBrut = window.location.hash.startsWith('#')
+    ? window.location.hash.slice(1)
+    : window.location.hash;
+  const paramsHash = new URLSearchParams(hashBrut);
+
+  // Si Supabase renvoie une erreur dans l'URL (ex. lien expiré), le lien n'est pas valide
+  const erreurUrl = Boolean(
+    paramsQuery.get('error') ||
+      paramsQuery.get('error_code') ||
+      paramsHash.get('error') ||
+      paramsHash.get('error_code')
+  );
+
+  if (erreurUrl) {
+    return { lienDetecte: false, erreurUrl: true };
+  }
+
+  const estTypeRecovery =
+    paramsHash.get('type') === 'recovery' ||
+    paramsQuery.get('type') === 'recovery';
+  const aCodePkce = Boolean(paramsQuery.get('code'));
+  const estSurReinitialisation =
+    window.location.pathname === '/reinitialisation';
+
+  return {
+    lienDetecte: estTypeRecovery || (estSurReinitialisation && aCodePkce),
+    erreurUrl: false,
+  };
+}
+
+// Capturé une seule fois au chargement du module, avant tout nettoyage d'URL par Supabase
+const ETAT_URL_INITIAL = detecterRecuperationDansUrl();
 
 export function AuthProvider({ children }) {
   // Session Supabase courante (null si aucun utilisateur n'est connecté)
@@ -9,6 +52,11 @@ export function AuthProvider({ children }) {
 
   // Indique si la vérification initiale de la session (getSession) est terminée
   const [sessionInitialisee, setSessionInitialisee] = useState(false);
+
+  // Indique si la session courante provient d'un lien de réinitialisation de mot de passe
+  const [sessionRecuperation, setSessionRecuperation] = useState(
+    ETAT_URL_INITIAL.lienDetecte
+  );
 
   // Profil applicatif chargé depuis public.profils (+ infos de public.entreprises)
   const [profil, setProfil] = useState(null);
@@ -51,10 +99,17 @@ export function AuthProvider({ children }) {
     // sinon la gestion interne de la session peut se bloquer.
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_evenement, nouvelleSession) => {
+    } = supabase.auth.onAuthStateChange((evenement, nouvelleSession) => {
       if (!estMonte) {
         return;
       }
+
+      if (evenement === 'PASSWORD_RECOVERY') {
+        setSessionRecuperation(true);
+      } else if (evenement === 'SIGNED_OUT') {
+        setSessionRecuperation(false);
+      }
+
       setSession(nouvelleSession ?? null);
       setSessionInitialisee(true);
     });
@@ -135,6 +190,23 @@ export function AuthProvider({ children }) {
     };
   }, [utilisateurId]);
 
+  // Met à jour immédiatement l'objet utilisateur dans la session locale (ex. après updateUser)
+  // afin d'éviter toute redirection en boucle avant l'arrivée de l'événement USER_UPDATED.
+  function mettreAJourUtilisateur(utilisateurMisAJour) {
+    if (!utilisateurMisAJour) {
+      return;
+    }
+    setSession((sessionActuelle) => {
+      if (!sessionActuelle) {
+        return sessionActuelle;
+      }
+      return {
+        ...sessionActuelle,
+        user: utilisateurMisAJour,
+      };
+    });
+  }
+
   // Déconnecte l'utilisateur courant et vide immédiatement l'état local
   async function deconnexion() {
     const { error } = await supabase.auth.signOut();
@@ -145,7 +217,12 @@ export function AuthProvider({ children }) {
     setProfil(null);
     setErreurProfil(null);
     setUtilisateurProfilCharge(null);
+    setSessionRecuperation(false);
   }
+
+  // Drapeau indiquant si l'utilisateur doit obligatoirement changer son mot de passe temporaire
+  const doitChangerMdp =
+    session?.user?.user_metadata?.doit_changer_mdp === true;
 
   // On reste en chargement tant que la session n'est pas initialisée,
   // ou tant qu'un utilisateur est connecté mais que son profil n'a pas encore été chargé.
@@ -155,9 +232,13 @@ export function AuthProvider({ children }) {
 
   const valeur = {
     session,
+    sessionInitialisee,
     profil,
     chargement,
     erreurProfil,
+    doitChangerMdp,
+    sessionRecuperation,
+    mettreAJourUtilisateur,
     deconnexion,
   };
 

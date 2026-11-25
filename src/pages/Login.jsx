@@ -1,5 +1,6 @@
 // Page de connexion MiniGest v2 (aucune inscription publique : les comptes sont créés par le Super admin)
 import { useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient.js';
 
 // Traduit les messages d'erreur courants de Supabase Auth en français clair
@@ -33,6 +34,12 @@ function traduireErreurConnexion(erreur) {
 }
 
 function Login() {
+  const location = useLocation();
+  const messageSuccesNavigation =
+    typeof location.state?.messageSucces === 'string'
+      ? location.state.messageSucces
+      : '';
+
   const [email, setEmail] = useState('');
   const [motDePasse, setMotDePasse] = useState('');
   const [erreur, setErreur] = useState('');
@@ -75,6 +82,12 @@ function Login() {
           <p className="auth-subtitle">Connexion à votre espace professionnel</p>
         </div>
 
+        {messageSuccesNavigation && !erreur && (
+          <p className="auth-success-banner" role="status">
+            {messageSuccesNavigation}
+          </p>
+        )}
+
         <form className="auth-form" onSubmit={gererSoumission} noValidate>
           <div className="form-group">
             <label htmlFor="login-email">
@@ -106,6 +119,12 @@ function Login() {
               disabled={enCours}
               required
             />
+          </div>
+
+          <div className="auth-links-row">
+            <Link to="/mot-de-passe-oublie" className="auth-link">
+              Mot de passe oublié ?
+            </Link>
           </div>
 
           {erreur && (
