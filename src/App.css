@@ -1949,6 +1949,18 @@ body {
   color: #64748b;
 }
 
+/* Bandeaux de retour dans la section "Mon équipe" (/app — Lot 4) */
+.equipe-feedback-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.equipe-feedback-stack .import-report {
+  margin-bottom: 0;
+}
+
 /* Adaptation intermédiaire des 6 KPI sur tablette */
 @media (max-width: 1080px) {
   .admin-kpi-grid {

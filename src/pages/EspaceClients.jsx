@@ -1,10 +1,11 @@
 // Espace clients connecté à Supabase (table public.clients protégée par RLS).
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Header from '../components/Header.jsx';
 import Dashboard from '../components/Dashboard.jsx';
 import ClientForm from '../components/ClientForm.jsx';
 import SearchBar from '../components/SearchBar.jsx';
 import ClientList from '../components/ClientList.jsx';
+import EquipeSection from '../components/EquipeSection.jsx';
 import { supabase } from '../lib/supabaseClient.js';
 import { useAuth } from '../context/useAuth.js';
 import {
@@ -39,6 +40,9 @@ import {
 } from '../utils/tri.js';
 import { normaliserParPage, paginer } from '../utils/pagination.js';
 import { construireMessageBandeauAbonnement } from '../utils/admin.js';
+import { extraireMessageErreurEdgeFunction } from '../utils/equipe.js';
+
+const COLONNES_PROFIL_EQUIPE = 'id, entreprise_id, nom_complet, role, actif';
 
 // Traduit les erreurs PostgreSQL / Supabase courantes en messages français clairs
 function traduireErreurSupabase(erreur, messageParDefaut) {
@@ -121,7 +125,7 @@ function EspaceClients() {
     Boolean(profil?.entreprise_id) &&
     Boolean(session?.user?.id);
 
-  // Le bandeau d'échéance d'abonnement est strictement réservé au gérant
+  // Le bandeau d'échéance d'abonnement et la section "Mon équipe" sont réservés au gérant
   const estGerant = profil?.role === 'gerant';
 
   // Liste des clients chargés depuis public.clients (plus aucun localStorage pour les clients)
@@ -129,6 +133,20 @@ function EspaceClients() {
 
   // Abonnements de l'entreprise (chargés uniquement pour le gérant via la politique RLS existante)
   const [abonnementsEntreprise, setAbonnementsEntreprise] = useState([]);
+
+  // Gestion de l'équipe (chargée et utilisée uniquement pour le gérant — Lot 4)
+  const [membresEquipe, setMembresEquipe] = useState([]);
+  const [chargementEquipe, setChargementEquipe] = useState(false);
+  const [erreurChargementEquipe, setErreurChargementEquipe] = useState('');
+  const [compteurRechargementEquipe, setCompteurRechargementEquipe] =
+    useState(0);
+  const [messageSuccesEquipe, setMessageSuccesEquipe] = useState('');
+  const [avertissementJournalEquipe, setAvertissementJournalEquipe] =
+    useState('');
+  const [erreurActionEquipe, setErreurActionEquipe] = useState('');
+  const [erreurCreationEmploye, setErreurCreationEmploye] = useState('');
+  const [creationEmployeEnCours, setCreationEmployeEnCours] = useState(false);
+  const [actionMembreId, setActionMembreId] = useState(null);
 
   // État de chargement initial et message d'erreur éventuel lors de la lecture
   const [chargementClients, setChargementClients] = useState(true);
@@ -264,6 +282,248 @@ function EspaceClients() {
       estActif = false;
     };
   }, [profilPret, estGerant, profil?.id, compteurRechargement]);
+
+  // Pour le gérant uniquement : lit les profils de son entreprise via la politique RLS existante
+  // (profils_select_gerant_entreprise), sans aucun filtre entreprise_id côté React.
+  const recupererEquipeDepuisSupabase = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('profils')
+      .select(COLONNES_PROFIL_EQUIPE)
+      .order('nom_complet', { ascending: true });
+
+    if (error) {
+      return { erreur: error, membres: [] };
+    }
+
+    return { erreur: null, membres: data ?? [] };
+  }, []);
+
+  useEffect(() => {
+    if (!profilPret || !estGerant) {
+      return;
+    }
+
+    let estActif = true;
+
+    async function chargerEquipeGerant() {
+      setChargementEquipe(true);
+      setErreurChargementEquipe('');
+
+      try {
+        const resultat = await recupererEquipeDepuisSupabase();
+        if (!estActif) {
+          return;
+        }
+
+        if (resultat.erreur) {
+          setMembresEquipe([]);
+          setErreurChargementEquipe(
+            traduireErreurSupabase(
+              resultat.erreur,
+              "Impossible de charger la liste de votre équipe. Veuillez réessayer."
+            )
+          );
+        } else {
+          setMembresEquipe(resultat.membres);
+        }
+      } catch {
+        if (!estActif) {
+          return;
+        }
+        setMembresEquipe([]);
+        setErreurChargementEquipe(
+          "Erreur réseau lors du chargement de l'équipe. Vérifiez votre connexion."
+        );
+      } finally {
+        if (estActif) {
+          setChargementEquipe(false);
+        }
+      }
+    }
+
+    chargerEquipeGerant();
+
+    return () => {
+      estActif = false;
+    };
+  }, [
+    profilPret,
+    estGerant,
+    profil?.id,
+    compteurRechargement,
+    compteurRechargementEquipe,
+    recupererEquipeDepuisSupabase,
+  ]);
+
+  // Recharge silencieusement l'équipe après une création ou un changement de statut
+  async function rechargerEquipeSilencieusement() {
+    try {
+      const resultat = await recupererEquipeDepuisSupabase();
+      if (!resultat.erreur) {
+        setMembresEquipe(resultat.membres);
+      }
+    } catch {
+      // L'état local a déjà été mis à jour ; on ne bloque pas l'utilisateur
+    }
+  }
+
+  // Crée un employé rattaché à l'entreprise du gérant via l'Edge Function gerer-equipe
+  async function creerEmploye(donneesPropres) {
+    if (!profilPret || !estGerant || creationEmployeEnCours) {
+      return false;
+    }
+
+    setMessageSuccesEquipe('');
+    setAvertissementJournalEquipe('');
+    setErreurActionEquipe('');
+    setErreurCreationEmploye('');
+    setCreationEmployeEnCours(true);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('gerer-equipe', {
+        body: {
+          action: 'creer',
+          email: donneesPropres.email,
+          nom_complet: donneesPropres.nom_complet,
+          mot_de_passe_temporaire: donneesPropres.mot_de_passe_temporaire,
+        },
+      });
+
+      if (error) {
+        const messageErreur = await extraireMessageErreurEdgeFunction(
+          error,
+          "Impossible d'ajouter l'employé. Veuillez réessayer."
+        );
+        setErreurCreationEmploye(messageErreur);
+        return false;
+      }
+
+      if (data?.error) {
+        setErreurCreationEmploye(data.error);
+        return false;
+      }
+
+      const utilisateurCree = data?.utilisateur;
+      if (!utilisateurCree?.id) {
+        setErreurCreationEmploye(
+          "Réponse inattendue lors de la création de l'employé."
+        );
+        return false;
+      }
+
+      const nouveauMembre = {
+        id: utilisateurCree.id,
+        entreprise_id: utilisateurCree.entreprise_id,
+        nom_complet: utilisateurCree.nom_complet,
+        role: utilisateurCree.role,
+        actif: utilisateurCree.actif,
+      };
+
+      setMembresEquipe((listeActuelle) => [...listeActuelle, nouveauMembre]);
+
+      if (data.journal_enregistre === false) {
+        setAvertissementJournalEquipe(
+          data.avertissement ||
+            'Employé créé, mais non enregistré dans le journal.'
+        );
+      }
+
+      await rechargerEquipeSilencieusement();
+      setMessageSuccesEquipe(
+        `Compte employé créé pour « ${utilisateurCree.nom_complet} » (${utilisateurCree.email}).`
+      );
+      return true;
+    } catch {
+      setErreurCreationEmploye(
+        "Erreur réseau lors de la création de l'employé. Vérifiez votre connexion."
+      );
+      return false;
+    } finally {
+      setCreationEmployeEnCours(false);
+    }
+  }
+
+  // Désactive ou réactive un employé de l'entreprise via l'Edge Function gerer-equipe
+  async function basculerActifEmploye(membre) {
+    if (!profilPret || !estGerant || actionMembreId !== null) {
+      return false;
+    }
+
+    // Garde-fou côté interface (la sécurité réelle est garantie par l'Edge Function)
+    if (membre.role !== 'employe' || membre.id === session.user.id) {
+      setErreurActionEquipe('Action non autorisée');
+      return false;
+    }
+
+    setMessageSuccesEquipe('');
+    setAvertissementJournalEquipe('');
+    setErreurActionEquipe('');
+    setErreurCreationEmploye('');
+    setActionMembreId(membre.id);
+
+    const actionDemandee = membre.actif ? 'desactiver' : 'reactiver';
+
+    try {
+      const { data, error } = await supabase.functions.invoke('gerer-equipe', {
+        body: {
+          action: actionDemandee,
+          profil_id: membre.id,
+        },
+      });
+
+      if (error) {
+        const messageErreur = await extraireMessageErreurEdgeFunction(
+          error,
+          membre.actif
+            ? "Impossible de désactiver l'employé. Veuillez réessayer."
+            : "Impossible de réactiver l'employé. Veuillez réessayer."
+        );
+        setErreurActionEquipe(messageErreur);
+        return false;
+      }
+
+      if (data?.error) {
+        setErreurActionEquipe(data.error);
+        return false;
+      }
+
+      const profilMisAJour = data?.utilisateur;
+      if (!profilMisAJour?.id) {
+        setErreurActionEquipe(
+          "Réponse inattendue lors de la mise à jour de l'employé."
+        );
+        return false;
+      }
+
+      setMembresEquipe((listeActuelle) =>
+        listeActuelle.map((item) =>
+          item.id === profilMisAJour.id ? profilMisAJour : item
+        )
+      );
+
+      if (data.journal_enregistre === false) {
+        setAvertissementJournalEquipe(
+          data.avertissement ||
+            'Action effectuée, mais non enregistrée dans le journal.'
+        );
+      }
+
+      await rechargerEquipeSilencieusement();
+      setMessageSuccesEquipe(
+        profilMisAJour.actif
+          ? `Compte de « ${profilMisAJour.nom_complet} » réactivé.`
+          : `Compte de « ${profilMisAJour.nom_complet} » désactivé.`
+      );
+      return true;
+    } catch {
+      setErreurActionEquipe(
+        "Erreur réseau lors de la mise à jour de l'employé. Vérifiez votre connexion."
+      );
+      return false;
+    } finally {
+      setActionMembreId(null);
+    }
+  }
 
   // Mémorise automatiquement le choix d'affichage du tableau de bord
   useEffect(() => {
@@ -1049,6 +1309,28 @@ function EspaceClients() {
         onImporterCSV={importerClientsCSV}
         onFermerBilanImport={() => setBilanImport(null)}
       />
+
+      {/* Section "Mon équipe" : visible UNIQUEMENT pour le gérant (jamais pour un employé) */}
+      {estGerant && (
+        <EquipeSection
+          membres={membresEquipe}
+          utilisateurConnecteId={session.user.id}
+          chargement={chargementEquipe}
+          erreurChargement={erreurChargementEquipe}
+          messageSucces={messageSuccesEquipe}
+          avertissementJournal={avertissementJournalEquipe}
+          erreurAction={erreurActionEquipe}
+          erreurCreation={erreurCreationEmploye}
+          creationEnCours={creationEmployeEnCours}
+          actionMembreId={actionMembreId}
+          onCreerEmploye={creerEmploye}
+          onBasculerActifEmploye={basculerActifEmploye}
+          onRecharger={() =>
+            setCompteurRechargementEquipe((compteur) => compteur + 1)
+          }
+          onFermerErreurAction={() => setErreurActionEquipe('')}
+        />
+      )}
 
       {/* Pied de page de l'application */}
       <footer className="footer">MiniGest v2 — Patrick Kassi</footer>

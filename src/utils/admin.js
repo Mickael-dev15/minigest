@@ -43,6 +43,9 @@ export const LIBELLES_ACTION_JOURNAL = {
   creation_utilisateur: 'Création utilisateur',
   activation_utilisateur: 'Réactivation utilisateur',
   desactivation_utilisateur: 'Désactivation utilisateur',
+  creation_employe: 'Création employé',
+  desactivation_employe: 'Désactivation employé',
+  reactivation_employe: 'Réactivation employé',
 };
 
 const FORMATEUR_NOMBRE_FR = new Intl.NumberFormat('fr-FR');
