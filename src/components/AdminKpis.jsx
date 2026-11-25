@@ -36,6 +36,13 @@ function AdminKpis({ indicateurs }) {
             {indicateurs.abonnementsEnRetard}
           </strong>
         </div>
+
+        <div className="kpi-card kpi-card-echeances">
+          <span className="kpi-label">Échéances sous 7 jours</span>
+          <strong className="kpi-value">
+            {indicateurs.echeancesSous7Jours}
+          </strong>
+        </div>
       </div>
     </section>
   );

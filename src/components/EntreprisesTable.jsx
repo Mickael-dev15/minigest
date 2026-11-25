@@ -4,8 +4,10 @@
 import { useState } from 'react';
 import {
   LIBELLES_STATUT_PAIEMENT,
-  determinerAbonnementEnCours,
+  analyserEcheanceEntreprise,
   estAbonnementEnRetard,
+  estEntrepriseASurveiller,
+  formaterBadgeEcheance,
   formaterDateFr,
   obtenirNbClientsEntreprise,
   validerMotifSuspension,
@@ -25,6 +27,9 @@ function EntreprisesTable({
   const [entrepriseASuspendre, setEntrepriseASuspendre] = useState(null);
   const [motifSuspension, setMotifSuspension] = useState('');
   const [erreurMotif, setErreurMotif] = useState('');
+
+  // Filtre d'affichage du tableau : 'toutes' ou 'a_surveiller'
+  const [filtreEntreprises, setFiltreEntreprises] = useState('toutes');
 
   // Ouvre le formulaire de confirmation de suspension pour l'entreprise choisie
   function ouvrirConfirmationSuspension(entreprise) {
@@ -65,10 +70,49 @@ function EntreprisesTable({
     entrepriseASuspendre !== null &&
     actionEnCoursId === entrepriseASuspendre.id;
 
+  // Filtrage dérivé sans modifier le tableau entreprises d'origine
+  const entreprisesASurveiller = entreprises.filter((entreprise) =>
+    estEntrepriseASurveiller(abonnementsParEntreprise[entreprise.id] ?? [])
+  );
+  const entreprisesAffichees =
+    filtreEntreprises === 'a_surveiller' ? entreprisesASurveiller : entreprises;
+
   return (
     <section className="card" aria-label="Liste des entreprises">
       <div className="list-header">
-        <h2>Entreprises ({entreprises.length})</h2>
+        <h2>Entreprises ({entreprisesAffichees.length})</h2>
+
+        {/* Filtres rapides : toutes les entreprises ou uniquement celles à surveiller */}
+        <div
+          className="status-filters admin-company-filters"
+          role="group"
+          aria-label="Filtrer les entreprises"
+        >
+          <button
+            type="button"
+            className={
+              filtreEntreprises === 'toutes'
+                ? 'status-filter-btn status-filter-active'
+                : 'status-filter-btn'
+            }
+            onClick={() => setFiltreEntreprises('toutes')}
+            aria-pressed={filtreEntreprises === 'toutes'}
+          >
+            Toutes ({entreprises.length})
+          </button>
+          <button
+            type="button"
+            className={
+              filtreEntreprises === 'a_surveiller'
+                ? 'status-filter-btn status-filter-active'
+                : 'status-filter-btn'
+            }
+            onClick={() => setFiltreEntreprises('a_surveiller')}
+            aria-pressed={filtreEntreprises === 'a_surveiller'}
+          >
+            À surveiller ({entreprisesASurveiller.length})
+          </button>
+        </div>
       </div>
 
       {/* Encart de confirmation avec motif obligatoire avant toute suspension */}
@@ -133,6 +177,10 @@ function EntreprisesTable({
 
       {entreprises.length === 0 ? (
         <p className="empty-text">Aucune entreprise enregistrée.</p>
+      ) : entreprisesAffichees.length === 0 ? (
+        <p className="empty-text">
+          Aucune entreprise à surveiller pour le moment.
+        </p>
       ) : (
         <div className="table-wrapper">
           <table className="client-table admin-table">
@@ -148,16 +196,18 @@ function EntreprisesTable({
               </tr>
             </thead>
             <tbody>
-              {entreprises.map((entreprise) => {
+              {entreprisesAffichees.map((entreprise) => {
                 const nbClients = obtenirNbClientsEntreprise(
                   carteNbClients,
                   entreprise.id
                 );
                 const abonnementsEntreprise =
                   abonnementsParEntreprise[entreprise.id] ?? [];
-                const abonnementEnCours = determinerAbonnementEnCours(
+                const analyseEcheance = analyserEcheanceEntreprise(
                   abonnementsEntreprise
                 );
+                const { abonnementEnCours } = analyseEcheance;
+                const badgeEcheance = formaterBadgeEcheance(analyseEcheance);
                 const enRetard = estAbonnementEnRetard(abonnementEnCours);
                 const estSelectionnee =
                   entreprise.id === entrepriseSelectionneeId;
@@ -235,6 +285,13 @@ function EntreprisesTable({
                               ? ' (échu)'
                               : ''}
                           </span>
+                          {badgeEcheance && (
+                            <span
+                              className={`badge-statut badge-echeance-${badgeEcheance.type}`}
+                            >
+                              {badgeEcheance.libelle}
+                            </span>
+                          )}
                         </div>
                       )}
                     </td>

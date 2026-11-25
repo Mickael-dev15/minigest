@@ -28,6 +28,11 @@ export const LIBELLES_ROLE = {
 
 export const LONGUEUR_MIN_MOT_DE_PASSE = 12;
 
+// Seuil d'alerte (en jours) avant la date de fin d'un abonnement
+export const SEUIL_ALERTE_JOURS = 7;
+
+const MS_PAR_JOUR = 86_400_000;
+
 // Libellés lisibles pour les actions enregistrées dans public.journal
 export const LIBELLES_ACTION_JOURNAL = {
   creation_entreprise: 'Création entreprise',
@@ -76,6 +81,75 @@ export function estDateIsoValide(valeur) {
 export function normaliserDateIso(valeur) {
   const texte = String(valeur ?? '').trim().slice(0, 10);
   return estDateIsoValide(texte) ? texte : '';
+}
+
+// Convertit une date de référence (chaîne 'YYYY-MM-DD' ou objet Date) en date locale 'YYYY-MM-DD'
+function normaliserDateReference(dateReference) {
+  if (dateReference === undefined || dateReference === null) {
+    return obtenirDateLocaleAujourdhui();
+  }
+  if (dateReference instanceof Date) {
+    return Number.isNaN(dateReference.getTime())
+      ? ''
+      : obtenirDateLocaleAujourdhui(dateReference);
+  }
+  return normaliserDateIso(dateReference);
+}
+
+// Convertit une date 'YYYY-MM-DD' valide en timestamp UTC minuit (sans utiliser new Date('YYYY-MM-DD'))
+function dateIsoEnUtcMs(dateIso) {
+  const iso = normaliserDateIso(dateIso);
+  if (!iso) {
+    return null;
+  }
+
+  const [annee, mois, jour] = iso.split('-').map(Number);
+  return Date.UTC(annee, mois - 1, jour);
+}
+
+// Calcule le nombre entier de jours calendaires entre aujourdhui et date_fin
+// en dates locales 'YYYY-MM-DD' (< 0 si dépassée, 0 si aujourd'hui, > 0 si future).
+export function joursAvantEcheance(
+  date_fin,
+  aujourdhui = obtenirDateLocaleAujourdhui()
+) {
+  const finMs = dateIsoEnUtcMs(date_fin);
+  const aujourdhuiIso = normaliserDateReference(aujourdhui);
+  const aujourdhuiMs = dateIsoEnUtcMs(aujourdhuiIso);
+
+  if (finMs === null || aujourdhuiMs === null) {
+    return null;
+  }
+
+  return (finMs - aujourdhuiMs) / MS_PAR_JOUR;
+}
+
+// Évalue l'état d'échéance d'un abonnement par rapport à aujourdhui ('YYYY-MM-DD' locale) :
+// - 'expire'  : date_fin strictement passée (< 0 jour)
+// - 'bientot' : date_fin aujourd'hui ou dans SEUIL_ALERTE_JOURS jours ou moins (0..7)
+// - 'ok'      : au-delà de SEUIL_ALERTE_JOURS jours (ou date absente / invalide)
+export function etatEcheance(
+  abonnement,
+  aujourdhui = obtenirDateLocaleAujourdhui()
+) {
+  if (!abonnement) {
+    return 'ok';
+  }
+
+  const jours = joursAvantEcheance(abonnement.date_fin, aujourdhui);
+  if (jours === null) {
+    return 'ok';
+  }
+
+  if (jours < 0) {
+    return 'expire';
+  }
+
+  if (jours <= SEUIL_ALERTE_JOURS) {
+    return 'bientot';
+  }
+
+  return 'ok';
 }
 
 // Formate une date SQL 'YYYY-MM-DD' au format français 'JJ/MM/AAAA' sans décalage UTC
@@ -165,8 +239,8 @@ export function estAbonnementEnRetard(abonnement, dateReference = new Date()) {
 
   if (abonnement.statut_paiement === 'en_attente') {
     const dateFin = normaliserDateIso(abonnement.date_fin);
-    const aujourdhui = obtenirDateLocaleAujourdhui(dateReference);
-    return dateFin !== '' && dateFin < aujourdhui;
+    const aujourdhui = normaliserDateReference(dateReference);
+    return dateFin !== '' && aujourdhui !== '' && dateFin < aujourdhui;
   }
 
   return false;
@@ -229,7 +303,7 @@ export function determinerAbonnementEnCours(
     return null;
   }
 
-  const aujourdhui = obtenirDateLocaleAujourdhui(dateReference);
+  const aujourdhui = normaliserDateReference(dateReference);
 
   const actifsAujourdhui = liste.filter((abonnement) => {
     const debut = normaliserDateIso(abonnement?.date_debut);
@@ -244,7 +318,170 @@ export function determinerAbonnementEnCours(
   return [...liste].sort(comparerAbonnementsRecents)[0];
 }
 
-// Calcule les 5 indicateurs affichés en haut de la page /admin
+// Vérifie si l'entreprise dispose déjà d'un abonnement suivant après l'abonnement en cours :
+// date_debut strictement postérieure à aujourd'hui ET >= date_fin de l'abonnement en cours.
+export function aAbonnementSuivant(
+  abonnementEnCours,
+  abonnementsEntreprise,
+  aujourdhui = obtenirDateLocaleAujourdhui()
+) {
+  if (!abonnementEnCours) {
+    return false;
+  }
+
+  const finEnCours = normaliserDateIso(abonnementEnCours.date_fin);
+  const dateJour = normaliserDateReference(aujourdhui);
+  if (!finEnCours || !dateJour) {
+    return false;
+  }
+
+  const liste = Array.isArray(abonnementsEntreprise)
+    ? abonnementsEntreprise
+    : [];
+
+  return liste.some((abonnement) => {
+    if (
+      !abonnement ||
+      abonnement === abonnementEnCours ||
+      (abonnementEnCours.id && abonnement.id === abonnementEnCours.id)
+    ) {
+      return false;
+    }
+
+    const debut = normaliserDateIso(abonnement.date_debut);
+    return debut !== '' && debut > dateJour && debut >= finEnCours;
+  });
+}
+
+// Analyse l'échéance de l'abonnement en cours d'une entreprise en tenant compte d'un
+// éventuel renouvellement déjà enregistré (aucune alerte si un abonnement suivant existe).
+export function analyserEcheanceEntreprise(
+  abonnementsEntreprise,
+  aujourdhui = obtenirDateLocaleAujourdhui()
+) {
+  const dateJour = normaliserDateReference(aujourdhui);
+  const abonnementEnCours = determinerAbonnementEnCours(
+    abonnementsEntreprise,
+    dateJour
+  );
+
+  if (!abonnementEnCours) {
+    return {
+      abonnementEnCours: null,
+      etat: 'ok',
+      joursRestants: null,
+      estRenouvele: false,
+      alerteEcheance: false,
+    };
+  }
+
+  const estRenouvele = aAbonnementSuivant(
+    abonnementEnCours,
+    abonnementsEntreprise,
+    dateJour
+  );
+  const joursRestants = joursAvantEcheance(abonnementEnCours.date_fin, dateJour);
+  const etatBrut = etatEcheance(abonnementEnCours, dateJour);
+
+  // Si un abonnement suivant est déjà prévu, aucune alerte d'échéance ne doit être levée
+  const etat = estRenouvele ? 'ok' : etatBrut;
+  const alerteEcheance =
+    !estRenouvele && (etatBrut === 'bientot' || etatBrut === 'expire');
+
+  return {
+    abonnementEnCours,
+    etat,
+    joursRestants,
+    estRenouvele,
+    alerteEcheance,
+  };
+}
+
+// Construit le badge d'échéance à afficher dans le tableau des entreprises (/admin)
+export function formaterBadgeEcheance(analyseEcheance) {
+  if (!analyseEcheance?.abonnementEnCours) {
+    return null;
+  }
+
+  if (analyseEcheance.estRenouvele) {
+    return { type: 'renouvele', libelle: 'Renouvelé' };
+  }
+
+  if (analyseEcheance.etat === 'expire') {
+    return { type: 'expire', libelle: 'Expiré' };
+  }
+
+  if (analyseEcheance.etat === 'bientot') {
+    const jours = analyseEcheance.joursRestants;
+    if (jours === 0) {
+      return { type: 'bientot', libelle: "Expire aujourd'hui" };
+    }
+    if (jours === 1) {
+      return { type: 'bientot', libelle: 'Expire dans 1 jour' };
+    }
+    return { type: 'bientot', libelle: `Expire dans ${jours} jours` };
+  }
+
+  return null;
+}
+
+// Indique si une entreprise doit apparaître dans le filtre "À surveiller" sur /admin :
+// abonnement en retard de paiement OU échéance expirée / proche (sans renouvellement déjà prévu).
+export function estEntrepriseASurveiller(
+  abonnementsEntreprise,
+  aujourdhui = obtenirDateLocaleAujourdhui()
+) {
+  const liste = Array.isArray(abonnementsEntreprise)
+    ? abonnementsEntreprise
+    : [];
+  const dateJour = normaliserDateReference(aujourdhui);
+
+  const aUnAbonnementEnRetard = liste.some((abonnement) =>
+    estAbonnementEnRetard(abonnement, dateJour)
+  );
+  if (aUnAbonnementEnRetard) {
+    return true;
+  }
+
+  const analyse = analyserEcheanceEntreprise(liste, dateJour);
+  return analyse.alerteEcheance;
+}
+
+// Construit le message du bandeau d'information sur /app pour le gérant.
+// Renvoie null si aucun abonnement, si déjà renouvelé ou si l'échéance dépasse SEUIL_ALERTE_JOURS.
+export function construireMessageBandeauAbonnement(
+  abonnementsEntreprise,
+  aujourdhui = obtenirDateLocaleAujourdhui()
+) {
+  const analyse = analyserEcheanceEntreprise(abonnementsEntreprise, aujourdhui);
+
+  if (!analyse.abonnementEnCours || !analyse.alerteEcheance) {
+    return null;
+  }
+
+  const dateFinFr = formaterDateFr(analyse.abonnementEnCours.date_fin);
+
+  if (analyse.etat === 'expire') {
+    return {
+      etat: 'expire',
+      message: `Votre abonnement a expiré le ${dateFinFr}. Contactez l'administrateur MiniGest.`,
+    };
+  }
+
+  const detailJours =
+    analyse.joursRestants === 0
+      ? "aujourd'hui"
+      : analyse.joursRestants === 1
+        ? 'dans 1 jour'
+        : `dans ${analyse.joursRestants} jours`;
+
+  return {
+    etat: 'bientot',
+    message: `Votre abonnement expire le ${dateFinFr} (${detailJours}). Contactez l'administrateur MiniGest.`,
+  };
+}
+
+// Calcule les 6 indicateurs affichés en haut de la page /admin
 export function calculerIndicateursAdmin(
   entreprises,
   abonnements,
@@ -253,6 +490,7 @@ export function calculerIndicateursAdmin(
 ) {
   const listeEntreprises = Array.isArray(entreprises) ? entreprises : [];
   const listeAbonnements = Array.isArray(abonnements) ? abonnements : [];
+  const dateJour = normaliserDateReference(dateReference);
 
   let entreprisesActives = 0;
   let entreprisesSuspendues = 0;
@@ -267,8 +505,22 @@ export function calculerIndicateursAdmin(
 
   let abonnementsEnRetard = 0;
   for (const abonnement of listeAbonnements) {
-    if (estAbonnementEnRetard(abonnement, dateReference)) {
+    if (estAbonnementEnRetard(abonnement, dateJour)) {
       abonnementsEnRetard += 1;
+    }
+  }
+
+  const abonnementsParEntreprise =
+    regrouperAbonnementsParEntreprise(listeAbonnements);
+  let echeancesSous7Jours = 0;
+
+  for (const entreprise of listeEntreprises) {
+    const analyse = analyserEcheanceEntreprise(
+      abonnementsParEntreprise[entreprise.id] ?? [],
+      dateJour
+    );
+    if (!analyse.estRenouvele && analyse.etat === 'bientot') {
+      echeancesSous7Jours += 1;
     }
   }
 
@@ -278,6 +530,7 @@ export function calculerIndicateursAdmin(
     entreprisesSuspendues,
     totalClients: calculerTotalClients(lignesRpc),
     abonnementsEnRetard,
+    echeancesSous7Jours,
   };
 }
 

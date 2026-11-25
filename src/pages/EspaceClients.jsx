@@ -38,6 +38,7 @@ import {
   trierClients,
 } from '../utils/tri.js';
 import { normaliserParPage, paginer } from '../utils/pagination.js';
+import { construireMessageBandeauAbonnement } from '../utils/admin.js';
 
 // Traduit les erreurs PostgreSQL / Supabase courantes en messages français clairs
 function traduireErreurSupabase(erreur, messageParDefaut) {
@@ -120,8 +121,14 @@ function EspaceClients() {
     Boolean(profil?.entreprise_id) &&
     Boolean(session?.user?.id);
 
+  // Le bandeau d'échéance d'abonnement est strictement réservé au gérant
+  const estGerant = profil?.role === 'gerant';
+
   // Liste des clients chargés depuis public.clients (plus aucun localStorage pour les clients)
   const [clients, setClients] = useState([]);
+
+  // Abonnements de l'entreprise (chargés uniquement pour le gérant via la politique RLS existante)
+  const [abonnementsEntreprise, setAbonnementsEntreprise] = useState([]);
 
   // État de chargement initial et message d'erreur éventuel lors de la lecture
   const [chargementClients, setChargementClients] = useState(true);
@@ -217,6 +224,46 @@ function EspaceClients() {
       estActif = false;
     };
   }, [profilPret, profil?.id, compteurRechargement]);
+
+  // Pour le gérant uniquement : lit les abonnements de son entreprise afin d'afficher
+  // un bandeau d'alerte en cas d'échéance proche ou dépassée (aucune suspension automatique).
+  // IMPORTANT : aucun filtre .eq('entreprise_id', ...) côté React : la RLS filtre déjà par entreprise.
+  useEffect(() => {
+    if (!profilPret || !estGerant) {
+      return;
+    }
+
+    let estActif = true;
+
+    async function chargerAbonnementsGerant() {
+      try {
+        const { data, error } = await supabase
+          .from('abonnements')
+          .select('id, date_debut, date_fin, formule, statut_paiement')
+          .order('date_fin', { ascending: false });
+
+        if (!estActif) {
+          return;
+        }
+
+        if (error) {
+          setAbonnementsEntreprise([]);
+        } else {
+          setAbonnementsEntreprise(data ?? []);
+        }
+      } catch {
+        if (estActif) {
+          setAbonnementsEntreprise([]);
+        }
+      }
+    }
+
+    chargerAbonnementsGerant();
+
+    return () => {
+      estActif = false;
+    };
+  }, [profilPret, estGerant, profil?.id, compteurRechargement]);
 
   // Mémorise automatiquement le choix d'affichage du tableau de bord
   useEffect(() => {
@@ -840,6 +887,11 @@ function EspaceClients() {
   const clientsTries = trierClients(clientsFiltres, tri);
   const pagination = paginer(clientsTries, pageCourante, parPage);
 
+  // Bandeau d'échéance réservé au gérant (null si employé, aucun abonnement, renouvelé ou > 7 jours)
+  const bandeauAbonnement = estGerant
+    ? construireMessageBandeauAbonnement(abonnementsEntreprise)
+    : null;
+
   // Écran d'attente tant que le profil ou la liste des clients est en cours de chargement
   if (chargementProfil || !profilPret || chargementClients) {
     return (
@@ -883,6 +935,23 @@ function EspaceClients() {
     <div className="app">
       {/* En-tête : affiche toujours le nombre TOTAL de clients */}
       <Header totalClients={clients.length} />
+
+      {/* Bandeau d'information d'échéance d'abonnement (gérant uniquement, aucune suspension automatique) */}
+      {bandeauAbonnement && (
+        <section
+          className={
+            bandeauAbonnement.etat === 'expire'
+              ? 'subscription-banner subscription-banner-expire'
+              : 'subscription-banner subscription-banner-bientot'
+          }
+          role={bandeauAbonnement.etat === 'expire' ? 'alert' : 'status'}
+          aria-live="polite"
+        >
+          <p className="subscription-banner-text">
+            {bandeauAbonnement.message}
+          </p>
+        </section>
+      )}
 
       {/* Message d'erreur global pour les actions sur la liste (ex. suppression refusée) */}
       {erreurAction && (
