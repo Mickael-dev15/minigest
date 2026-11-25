@@ -1,4 +1,4 @@
-// Tableau de bord Super admin (/admin) — Lot 2a.
+// Tableau de bord Super admin (/admin) — Lots 2a et 2b.
 // IMPORTANT : cette page ne lit JAMAIS public.clients ; elle utilise uniquement
 // le RPC nb_clients_par_entreprise pour le comptage par entreprise.
 import { useState, useEffect, useCallback } from 'react';
@@ -7,6 +7,7 @@ import AdminKpis from '../components/AdminKpis.jsx';
 import EntrepriseForm from '../components/EntrepriseForm.jsx';
 import EntreprisesTable from '../components/EntreprisesTable.jsx';
 import AbonnementsPanel from '../components/AbonnementsPanel.jsx';
+import UtilisateursSection from '../components/UtilisateursSection.jsx';
 import JournalSection from '../components/JournalSection.jsx';
 import { supabase } from '../lib/supabaseClient.js';
 import { useAuth } from '../context/useAuth.js';
@@ -20,6 +21,7 @@ const COLONNES_ENTREPRISE =
   'id, nom, ville, pays, statut, motif_suspension, cree_le';
 const COLONNES_ABONNEMENT =
   'id, entreprise_id, formule, date_debut, date_fin, montant_fcfa, statut_paiement, reference';
+const COLONNES_PROFIL = 'id, entreprise_id, nom_complet, role, actif';
 const COLONNES_JOURNAL =
   'id, acteur_id, action, cible, details, cree_le, acteur:profils ( nom_complet )';
 
@@ -40,6 +42,37 @@ function traduireErreurAdmin(erreur, messageParDefaut) {
   return messageParDefaut;
 }
 
+// Lit le vrai message d'erreur JSON renvoyé par une Edge Function (FunctionsHttpError).
+// Avec supabase.functions.invoke, les réponses 4xx/5xx placent la Response HTTP dans error.context.
+async function extraireMessageErreurEdgeFunction(erreur, messageParDefaut) {
+  if (!erreur) {
+    return messageParDefaut;
+  }
+
+  const contexte = erreur.context;
+  if (contexte && typeof contexte.json === 'function') {
+    try {
+      const reponseALire =
+        typeof contexte.clone === 'function' ? contexte.clone() : contexte;
+      const corps = await reponseALire.json();
+      if (typeof corps?.error === 'string' && corps.error.trim() !== '') {
+        return corps.error.trim();
+      }
+      if (typeof corps?.message === 'string' && corps.message.trim() !== '') {
+        return corps.message.trim();
+      }
+    } catch {
+      // Si le corps n'est pas du JSON exploitable, on utilise le message de repli
+    }
+  }
+
+  if (erreur.name === 'FunctionsFetchError') {
+    return 'Impossible de contacter le serveur. Vérifiez votre connexion ou le déploiement de la fonction.';
+  }
+
+  return messageParDefaut;
+}
+
 function Admin() {
   const { session, profil, chargement: chargementProfil } = useAuth();
 
@@ -54,6 +87,7 @@ function Admin() {
   const [entreprises, setEntreprises] = useState([]);
   const [abonnements, setAbonnements] = useState([]);
   const [lignesRpcClients, setLignesRpcClients] = useState([]);
+  const [profils, setProfils] = useState([]);
   const [journal, setJournal] = useState([]);
 
   // États de chargement initial et d'erreur globale
@@ -67,41 +101,56 @@ function Admin() {
   const [erreurAction, setErreurAction] = useState('');
   const [erreurCreation, setErreurCreation] = useState('');
   const [erreurAbonnement, setErreurAbonnement] = useState('');
+  const [erreurCreationUtilisateur, setErreurCreationUtilisateur] =
+    useState('');
 
   // États "en cours" pour désactiver les boutons et éviter les doubles clics
   const [creationEnCours, setCreationEnCours] = useState(false);
   const [actionEntrepriseId, setActionEntrepriseId] = useState(null);
   const [enregistrementAbonnement, setEnregistrementAbonnement] =
     useState(false);
+  const [creationUtilisateurEnCours, setCreationUtilisateurEnCours] =
+    useState(false);
+  const [actionUtilisateurId, setActionUtilisateurId] = useState(null);
 
   // Entreprise actuellement ouverte dans le panneau Abonnements (null si fermé)
   const [entrepriseSelectionneeId, setEntrepriseSelectionneeId] =
     useState(null);
 
-  // Charge les 4 sources de données en parallèle (sans jamais lire public.clients)
+  // Charge les 5 sources de données en parallèle (sans jamais lire public.clients)
   const recupererDonneesAdmin = useCallback(async () => {
-    const [resEntreprises, resAbonnements, resRpcClients, resJournal] =
-      await Promise.all([
-        supabase
-          .from('entreprises')
-          .select(COLONNES_ENTREPRISE)
-          .order('cree_le', { ascending: false }),
-        supabase
-          .from('abonnements')
-          .select(COLONNES_ABONNEMENT)
-          .order('date_fin', { ascending: false }),
-        supabase.rpc('nb_clients_par_entreprise'),
-        supabase
-          .from('journal')
-          .select(COLONNES_JOURNAL)
-          .order('cree_le', { ascending: false })
-          .limit(20),
-      ]);
+    const [
+      resEntreprises,
+      resAbonnements,
+      resRpcClients,
+      resProfils,
+      resJournal,
+    ] = await Promise.all([
+      supabase
+        .from('entreprises')
+        .select(COLONNES_ENTREPRISE)
+        .order('cree_le', { ascending: false }),
+      supabase
+        .from('abonnements')
+        .select(COLONNES_ABONNEMENT)
+        .order('date_fin', { ascending: false }),
+      supabase.rpc('nb_clients_par_entreprise'),
+      supabase
+        .from('profils')
+        .select(COLONNES_PROFIL)
+        .order('nom_complet', { ascending: true }),
+      supabase
+        .from('journal')
+        .select(COLONNES_JOURNAL)
+        .order('cree_le', { ascending: false })
+        .limit(20),
+    ]);
 
     const premiereErreur =
       resEntreprises.error ||
       resAbonnements.error ||
       resRpcClients.error ||
+      resProfils.error ||
       resJournal.error;
 
     if (premiereErreur) {
@@ -113,6 +162,7 @@ function Admin() {
       entreprises: resEntreprises.data ?? [],
       abonnements: resAbonnements.data ?? [],
       lignesRpcClients: resRpcClients.data ?? [],
+      profils: resProfils.data ?? [],
       journal: resJournal.data ?? [],
     };
   }, []);
@@ -146,6 +196,7 @@ function Admin() {
           setEntreprises(resultat.entreprises);
           setAbonnements(resultat.abonnements);
           setLignesRpcClients(resultat.lignesRpcClients);
+          setProfils(resultat.profils);
           setJournal(resultat.journal);
         }
       } catch {
@@ -169,7 +220,7 @@ function Admin() {
     };
   }, [superAdminPret, profil?.id, compteurRechargement, recupererDonneesAdmin]);
 
-  // Recharge silencieusement les indicateurs, tableaux et journal après chaque action
+  // Recharge silencieusement les indicateurs, tableaux, profils et journal après chaque action
   async function rechargerDonneesSilencieusement() {
     try {
       const resultat = await recupererDonneesAdmin();
@@ -177,6 +228,7 @@ function Admin() {
         setEntreprises(resultat.entreprises);
         setAbonnements(resultat.abonnements);
         setLignesRpcClients(resultat.lignesRpcClients);
+        setProfils(resultat.profils);
         setJournal(resultat.journal);
       }
     } catch {
@@ -218,6 +270,7 @@ function Admin() {
     setErreurAction('');
     setErreurCreation('');
     setErreurAbonnement('');
+    setErreurCreationUtilisateur('');
   }
 
   // 1. Création d'une nouvelle entreprise
@@ -542,6 +595,168 @@ function Admin() {
     }
   }
 
+  // 6. Création d'un compte utilisateur via l'Edge Function creer-utilisateur
+  async function creerUtilisateur(donneesPropres) {
+    if (!superAdminPret || creationUtilisateurEnCours) {
+      return false;
+    }
+
+    reinitialiserMessages();
+    setCreationUtilisateurEnCours(true);
+
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        'creer-utilisateur',
+        {
+          body: {
+            email: donneesPropres.email,
+            nom_complet: donneesPropres.nom_complet,
+            role: donneesPropres.role,
+            entreprise_id: donneesPropres.entreprise_id,
+            mot_de_passe_temporaire: donneesPropres.mot_de_passe_temporaire,
+          },
+        }
+      );
+
+      if (error) {
+        const messageErreur = await extraireMessageErreurEdgeFunction(
+          error,
+          "Impossible de créer l'utilisateur. Veuillez réessayer."
+        );
+        setErreurCreationUtilisateur(messageErreur);
+        return false;
+      }
+
+      if (data?.error) {
+        setErreurCreationUtilisateur(data.error);
+        return false;
+      }
+
+      const utilisateurCree = data?.utilisateur;
+      if (!utilisateurCree?.id) {
+        setErreurCreationUtilisateur(
+          "Réponse inattendue lors de la création de l'utilisateur."
+        );
+        return false;
+      }
+
+      const nouveauProfil = {
+        id: utilisateurCree.id,
+        entreprise_id: utilisateurCree.entreprise_id,
+        nom_complet: utilisateurCree.nom_complet,
+        role: utilisateurCree.role,
+        actif: utilisateurCree.actif,
+      };
+
+      setProfils((listeActuelle) => [...listeActuelle, nouveauProfil]);
+
+      if (data.journal_enregistre === false) {
+        setAvertissementJournal(
+          data.avertissement ||
+            'Utilisateur créé, mais non enregistré dans le journal.'
+        );
+      }
+
+      await rechargerDonneesSilencieusement();
+      setMessageSucces(
+        `Compte créé pour « ${utilisateurCree.nom_complet} » (${utilisateurCree.email}).`
+      );
+      return true;
+    } catch {
+      setErreurCreationUtilisateur(
+        "Erreur réseau lors de la création de l'utilisateur. Vérifiez votre connexion."
+      );
+      return false;
+    } finally {
+      setCreationUtilisateurEnCours(false);
+    }
+  }
+
+  // 7. Activation / désactivation directe d'un utilisateur (profils.actif) + journal
+  async function basculerActifUtilisateur(utilisateur) {
+    if (!superAdminPret || actionUtilisateurId !== null) {
+      return false;
+    }
+
+    // Garde-fou : le super_admin ne peut jamais se désactiver lui-même
+    if (utilisateur.id === session.user.id && utilisateur.actif) {
+      setErreurAction(
+        'Vous ne pouvez pas désactiver votre propre compte Super admin.'
+      );
+      return false;
+    }
+
+    reinitialiserMessages();
+    setActionUtilisateurId(utilisateur.id);
+
+    const nouvelEtatActif = !utilisateur.actif;
+
+    try {
+      const { data, error } = await supabase
+        .from('profils')
+        .update({ actif: nouvelEtatActif })
+        .eq('id', utilisateur.id)
+        .select(COLONNES_PROFIL);
+
+      if (error) {
+        setErreurAction(
+          traduireErreurAdmin(
+            error,
+            nouvelEtatActif
+              ? "Impossible de réactiver l'utilisateur. Veuillez réessayer."
+              : "Impossible de désactiver l'utilisateur. Veuillez réessayer."
+          )
+        );
+        return false;
+      }
+
+      if (!data || data.length === 0) {
+        setErreurAction('Action non autorisée');
+        return false;
+      }
+
+      const profilMisAJour = data[0];
+      setProfils((listeActuelle) =>
+        listeActuelle.map((item) =>
+          item.id === profilMisAJour.id ? profilMisAJour : item
+        )
+      );
+
+      const entrepriseRattachee = entreprises.find(
+        (e) => e.id === profilMisAJour.entreprise_id
+      );
+
+      await enregistrerDansJournal(
+        nouvelEtatActif
+          ? 'activation_utilisateur'
+          : 'desactivation_utilisateur',
+        profilMisAJour.nom_complet,
+        {
+          utilisateur_id: profilMisAJour.id,
+          role: profilMisAJour.role,
+          entreprise_id: profilMisAJour.entreprise_id,
+          entreprise_nom: entrepriseRattachee?.nom ?? null,
+          actif: profilMisAJour.actif,
+        }
+      );
+
+      await rechargerDonneesSilencieusement();
+      setMessageSucces(
+        nouvelEtatActif
+          ? `Compte de « ${profilMisAJour.nom_complet} » réactivé.`
+          : `Compte de « ${profilMisAJour.nom_complet} » désactivé.`
+      );
+      return true;
+    } catch {
+      setErreurAction(
+        "Erreur réseau lors de la mise à jour de l'utilisateur. Vérifiez votre connexion."
+      );
+      return false;
+    } finally {
+      setActionUtilisateurId(null);
+    }
+  }
+
   // Ouvre la section Abonnements de l'entreprise cliquée et fait défiler jusqu'à elle
   function ouvrirAbonnements(entreprise) {
     setErreurAbonnement('');
@@ -673,7 +888,19 @@ function Admin() {
             />
           )}
 
-          {/* 5. Dernières actions (20 plus récentes du journal) */}
+          {/* 5. Utilisateurs par entreprise + création et activation / désactivation */}
+          <UtilisateursSection
+            entreprises={entreprises}
+            profils={profils}
+            utilisateurConnecteId={session?.user?.id ?? null}
+            onCreerUtilisateur={creerUtilisateur}
+            onBasculerActifUtilisateur={basculerActifUtilisateur}
+            creationEnCours={creationUtilisateurEnCours}
+            actionUtilisateurId={actionUtilisateurId}
+            erreurCreation={erreurCreationUtilisateur}
+          />
+
+          {/* 6. Dernières actions (20 plus récentes du journal) */}
           <JournalSection entrees={journal} />
         </>
       )}

@@ -1775,6 +1775,123 @@ body {
   color: #12223a;
 }
 
+/* Section Utilisateurs (/admin — Lot 2b) */
+.user-form-container {
+  padding-top: 0;
+  border-top: none;
+  padding-bottom: 1.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.user-password-group {
+  grid-column: 1 / -1;
+}
+
+.password-input-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.password-input-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.btn-toggle-password {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.field-help-text {
+  font-size: 0.82rem;
+  color: #64748b;
+  line-height: 1.35;
+}
+
+.users-groups-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.users-company-group {
+  padding: 1rem 1.15rem;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.users-company-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.85rem;
+  margin-bottom: 0.85rem;
+}
+
+.users-company-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.users-company-name {
+  margin: 0;
+  font-size: 1.02rem;
+  color: #12223a;
+}
+
+.users-company-count {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.users-empty-group {
+  margin: 0;
+}
+
+/* Badges de rôle utilisateur */
+.badge-role-super-admin {
+  background-color: #12223a;
+  color: #ffffff;
+  border: 1px solid #12223a;
+}
+
+.badge-role-gerant {
+  background-color: #e0f7fa;
+  color: #0e7490;
+  border: 1px solid #67e8f9;
+}
+
+.badge-role-employe {
+  background-color: #f1f5f9;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+}
+
+.user-self-tag {
+  display: inline-block;
+  margin-left: 0.45rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background-color: #e0f2fe;
+  color: #0369a1;
+  font-size: 0.74rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.user-self-note {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
 /* Adaptation intermédiaire des 5 KPI sur tablette */
 @media (max-width: 960px) {
   .admin-kpi-grid {
@@ -1796,5 +1913,13 @@ body {
 
   .abo-resume {
     justify-content: flex-end;
+  }
+
+  .password-input-row {
+    flex-direction: column;
+  }
+
+  .users-company-group {
+    padding: 0.85rem;
   }
 }

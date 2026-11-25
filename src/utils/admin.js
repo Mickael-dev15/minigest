@@ -14,6 +14,20 @@ export const LIBELLES_STATUT_PAIEMENT = {
   en_retard: 'En retard',
 };
 
+// Rôles autorisés à la création depuis l'interface Super admin (jamais super_admin)
+export const ROLES_UTILISATEUR_CREABLES = [
+  { valeur: 'gerant', libelle: 'Gérant' },
+  { valeur: 'employe', libelle: 'Employé' },
+];
+
+export const LIBELLES_ROLE = {
+  super_admin: 'Super admin',
+  gerant: 'Gérant',
+  employe: 'Employé',
+};
+
+export const LONGUEUR_MIN_MOT_DE_PASSE = 12;
+
 // Libellés lisibles pour les actions enregistrées dans public.journal
 export const LIBELLES_ACTION_JOURNAL = {
   creation_entreprise: 'Création entreprise',
@@ -21,10 +35,15 @@ export const LIBELLES_ACTION_JOURNAL = {
   reactivation_entreprise: 'Réactivation entreprise',
   creation_abonnement: 'Ajout abonnement',
   modification_abonnement: 'Modification abonnement',
+  creation_utilisateur: 'Création utilisateur',
+  activation_utilisateur: 'Réactivation utilisateur',
+  desactivation_utilisateur: 'Désactivation utilisateur',
 };
 
 const FORMATEUR_NOMBRE_FR = new Intl.NumberFormat('fr-FR');
 const REGEX_DATE_ISO = /^\d{4}-\d{2}-\d{2}$/;
+const REGEX_EMAIL_UTILISATEUR =
+  /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i;
 
 // Renvoie la date locale du jour au format 'YYYY-MM-DD' (sans utiliser toISOString() qui est en UTC)
 export function obtenirDateLocaleAujourdhui(dateReference = new Date()) {
@@ -358,6 +377,139 @@ export function validerAbonnement(donnees) {
   };
 }
 
+// Ordre d'affichage des rôles au sein d'une même entreprise
+const ORDRE_ROLE = {
+  super_admin: 0,
+  gerant: 1,
+  employe: 2,
+};
+
+// Valide les champs du formulaire de création d'utilisateur (Lot 2b)
+// Normalise l'email (trim + minuscules) et interdit le rôle super_admin.
+export function validerNouvelUtilisateur(donnees) {
+  const email = String(donnees?.email ?? '').trim().toLowerCase();
+  const nomComplet = String(donnees?.nom_complet ?? '').trim();
+  const role = String(donnees?.role ?? '').trim();
+  const entrepriseId = String(donnees?.entreprise_id ?? '').trim();
+  const motDePasseTemporaire = String(donnees?.mot_de_passe_temporaire ?? '');
+
+  const erreurs = {};
+
+  if (entrepriseId === '') {
+    erreurs.entreprise_id = 'Veuillez choisir une entreprise active.';
+  }
+
+  if (nomComplet === '') {
+    erreurs.nom_complet = 'Le nom complet est obligatoire.';
+  }
+
+  if (email === '') {
+    erreurs.email = "L'adresse email est obligatoire.";
+  } else if (!REGEX_EMAIL_UTILISATEUR.test(email)) {
+    erreurs.email = "L'adresse email n'est pas valide.";
+  }
+
+  const rolesAutorises = ROLES_UTILISATEUR_CREABLES.map((r) => r.valeur);
+  if (!rolesAutorises.includes(role)) {
+    erreurs.role = 'Le rôle doit être Gérant ou Employé.';
+  }
+
+  if (motDePasseTemporaire.trim() === '') {
+    erreurs.mot_de_passe_temporaire =
+      'Le mot de passe temporaire est obligatoire.';
+  } else if (motDePasseTemporaire.length < LONGUEUR_MIN_MOT_DE_PASSE) {
+    erreurs.mot_de_passe_temporaire = `Le mot de passe temporaire doit contenir au moins ${LONGUEUR_MIN_MOT_DE_PASSE} caractères.`;
+  }
+
+  return {
+    erreurs,
+    donneesPropres: {
+      email,
+      nom_complet: nomComplet,
+      role,
+      entreprise_id: entrepriseId,
+      mot_de_passe_temporaire: motDePasseTemporaire,
+    },
+  };
+}
+
+// Trie une liste de profils par rôle (gérant avant employé) puis par nom complet
+function comparerProfils(a, b) {
+  const rangA = ORDRE_ROLE[a?.role] ?? 99;
+  const rangB = ORDRE_ROLE[b?.role] ?? 99;
+  if (rangA !== rangB) {
+    return rangA - rangB;
+  }
+
+  return String(a?.nom_complet ?? '').localeCompare(
+    String(b?.nom_complet ?? ''),
+    'fr',
+    { sensitivity: 'base' }
+  );
+}
+
+// Regroupe les profils par entreprise pour la section Utilisateurs de /admin.
+// Ne modifie jamais les tableaux reçus en paramètre.
+export function regrouperProfilsParEntreprise(profils, entreprises) {
+  const listeProfils = Array.isArray(profils) ? profils : [];
+  const listeEntreprises = Array.isArray(entreprises) ? entreprises : [];
+
+  const profilsParEntrepriseId = {};
+  const profilsSuperAdmin = [];
+
+  for (const profil of listeProfils) {
+    if (!profil) {
+      continue;
+    }
+    if (!profil.entreprise_id) {
+      profilsSuperAdmin.push(profil);
+      continue;
+    }
+    if (!profilsParEntrepriseId[profil.entreprise_id]) {
+      profilsParEntrepriseId[profil.entreprise_id] = [];
+    }
+    profilsParEntrepriseId[profil.entreprise_id].push(profil);
+  }
+
+  const idsEntreprisesConnues = new Set();
+  const groupes = listeEntreprises.map((entreprise) => {
+    idsEntreprisesConnues.add(entreprise.id);
+    const membres = profilsParEntrepriseId[entreprise.id] ?? [];
+    return {
+      id: entreprise.id,
+      nom: entreprise.nom,
+      statut: entreprise.statut,
+      estPlateforme: false,
+      profils: [...membres].sort(comparerProfils),
+    };
+  });
+
+  // Filet de sécurité si un profil pointe vers une entreprise non présente dans la liste
+  for (const entrepriseId of Object.keys(profilsParEntrepriseId)) {
+    if (!idsEntreprisesConnues.has(entrepriseId)) {
+      groupes.push({
+        id: entrepriseId,
+        nom: 'Entreprise rattachée',
+        statut: 'active',
+        estPlateforme: false,
+        profils: [...profilsParEntrepriseId[entrepriseId]].sort(comparerProfils),
+      });
+    }
+  }
+
+  if (profilsSuperAdmin.length > 0) {
+    groupes.push({
+      id: 'plateforme',
+      nom: 'Administration plateforme',
+      statut: 'active',
+      estPlateforme: true,
+      profils: [...profilsSuperAdmin].sort(comparerProfils),
+    });
+  }
+
+  return groupes;
+}
+
 // Formate les détails JSON d'une entrée du journal en un résumé lisible en français
 export function formaterDetailsJournal(details) {
   if (!details || typeof details !== 'object') {
@@ -366,6 +518,19 @@ export function formaterDetailsJournal(details) {
 
   const segments = [];
 
+  if (details.entreprise_nom) {
+    segments.push(`Entreprise : ${details.entreprise_nom}`);
+  }
+  if (details.role) {
+    const libelleRole = LIBELLES_ROLE[details.role] ?? details.role;
+    segments.push(`Rôle : ${libelleRole}`);
+  }
+  if (details.email) {
+    segments.push(`Email : ${details.email}`);
+  }
+  if (typeof details.actif === 'boolean') {
+    segments.push(`Statut : ${details.actif ? 'Actif' : 'Désactivé'}`);
+  }
   if (details.motif) {
     segments.push(`Motif : ${details.motif}`);
   }
