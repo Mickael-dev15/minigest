@@ -130,6 +130,17 @@ minigest/
 
 ---
 
+## Perte du téléphone (double authentification)
+
+La double authentification (TOTP) est obligatoire pour accéder à l'espace Super admin (`/admin`). En cas de perte, de changement de téléphone ou de suppression de l'application d'authentification, suivez cette procédure de secours :
+
+1. Connectez-vous au tableau de bord **Supabase** de votre projet.
+2. Ouvrez **Authentication > Users**, puis cliquez sur le compte **Super admin**.
+3. Dans la section dédiée à la double authentification (MFA), **supprimez le facteur MFA** associé à l'ancien téléphone.
+4. Revenez sur MiniGest et reconnectez-vous avec l'email et le mot de passe du Super admin : l'application détecte automatiquement qu'aucun facteur vérifié n'existe et affiche la page `/admin/securite` pour **réinscrire un nouveau facteur TOTP** (nouveau QR code et nouvelle clé secrète) sur votre nouvel appareil.
+
+---
+
 ## Auteur
 
 **Patrick Kassi** — *MiniGest v1.8*

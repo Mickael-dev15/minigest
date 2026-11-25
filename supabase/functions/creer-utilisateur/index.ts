@@ -39,6 +39,39 @@ function reponseJson(
   });
 }
 
+// Décode le payload base64url d'un JWT déjà vérifié par getUser() pour lire la claim 'aal'
+function lireNiveauAalJwt(jetonJwt: string): string | null {
+  try {
+    const segments = jetonJwt.split('.');
+    if (segments.length !== 3 || !segments[1]) {
+      return null;
+    }
+
+    // Conversion base64url (- et _) vers base64 standard avec padding '='
+    const base64SansPadding = segments[1]
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+    const restePadding = base64SansPadding.length % 4;
+    const base64 =
+      restePadding === 0
+        ? base64SansPadding
+        : base64SansPadding + '='.repeat(4 - restePadding);
+
+    const binaire = atob(base64);
+    const octets = Uint8Array.from(binaire, (caractere) =>
+      caractere.charCodeAt(0)
+    );
+    const payload = JSON.parse(new TextDecoder().decode(octets)) as Record<
+      string,
+      unknown
+    >;
+
+    return typeof payload?.aal === 'string' ? payload.aal : null;
+  } catch {
+    return null;
+  }
+}
+
 // Traduit les erreurs courantes de Supabase Auth en messages clairs en français
 function traduireErreurCreationAuth(erreur: {
   code?: string;
@@ -135,6 +168,11 @@ Deno.serve(async (req: Request): Promise<Response> => {
       { error: 'Accès refusé : session invalide ou expirée.' },
       403
     );
+  }
+
+  // Vérification que la session de l'appelant est bien en double authentification (aal2)
+  if (lireNiveauAalJwt(jetonJwt) !== 'aal2') {
+    return reponseJson({ error: 'Double authentification requise' }, 403);
   }
 
   const appelantId = donneesAppelant.user.id;

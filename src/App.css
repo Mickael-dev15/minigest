@@ -2040,6 +2040,90 @@ body {
   margin-bottom: 0;
 }
 
+/* Pages de double authentification MFA du Super admin (/admin/securite et /admin/verification) */
+.mfa-card {
+  max-width: 480px;
+}
+
+.mfa-loading {
+  margin: 1rem 0;
+  padding: 1rem;
+  text-align: center;
+  color: #12223a;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.mfa-error-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.mfa-qr-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.mfa-qr-image {
+  width: 210px;
+  height: 210px;
+  display: block;
+}
+
+.mfa-secret-box {
+  margin-bottom: 1.15rem;
+  padding: 0.85rem 1rem;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.mfa-secret-label {
+  margin: 0 0 0.45rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.mfa-secret-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.mfa-secret-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #12223a;
+  word-break: break-all;
+}
+
+.btn-copy-secret {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.84rem;
+}
+
+.mfa-code-input {
+  text-align: center;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: 0.35em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
 /* Adaptation intermédiaire des 6 KPI sur tablette */
 @media (max-width: 1080px) {
   .admin-kpi-grid {

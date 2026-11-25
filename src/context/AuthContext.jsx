@@ -1,9 +1,55 @@
 // Contexte d'authentification global : session Supabase + profil métier (rôle et entreprise).
-// Gère aussi la détection de la récupération de mot de passe (PASSWORD_RECOVERY)
-// et le drapeau doit_changer_mdp pour le changement obligatoire du mot de passe temporaire.
-import { useEffect, useState } from 'react';
+// Gère aussi la détection de la récupération de mot de passe (PASSWORD_RECOVERY),
+// le drapeau doit_changer_mdp et l'état de double authentification (MFA) du Super admin.
+import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient.js';
 import { AuthContext } from './useAuth.js';
+
+// Extrait les facteurs TOTP vérifiés depuis la réponse de supabase.auth.mfa.listFactors()
+function extraireFacteursTotpVerifies(donneesFacteurs) {
+  if (Array.isArray(donneesFacteurs?.totp) && donneesFacteurs.totp.length > 0) {
+    return donneesFacteurs.totp.filter(
+      (facteur) => facteur.status === 'verified'
+    );
+  }
+
+  if (Array.isArray(donneesFacteurs?.all)) {
+    return donneesFacteurs.all.filter(
+      (facteur) =>
+        facteur.factor_type === 'totp' && facteur.status === 'verified'
+    );
+  }
+
+  return [];
+}
+
+// Interroge Supabase Auth pour connaître le niveau AAL courant et les facteurs TOTP vérifiés
+async function lireEtatMfaServeur() {
+  const [resultatAal, resultatFacteurs] = await Promise.all([
+    supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+    supabase.auth.mfa.listFactors(),
+  ]);
+
+  if (resultatAal.error || resultatFacteurs.error) {
+    return {
+      niveau: 'aal1',
+      verifie: false,
+      totpId: null,
+      erreur:
+        'Impossible de vérifier votre double authentification pour le moment. Veuillez réessayer.',
+    };
+  }
+
+  const facteursVerifies = extraireFacteursTotpVerifies(resultatFacteurs.data);
+  const premierFacteur = facteursVerifies[0] ?? null;
+
+  return {
+    niveau: resultatAal.data?.currentLevel ?? 'aal1',
+    verifie: Boolean(premierFacteur),
+    totpId: premierFacteur?.id ?? null,
+    erreur: null,
+  };
+}
 
 // Inspecte l'URL au tout début du chargement (avant que Supabase ne nettoie le hash ou la query)
 // pour détecter un lien de réinitialisation de mot de passe (flux implicite ou PKCE).
@@ -68,7 +114,17 @@ export function AuthProvider({ children }) {
   // Message d'erreur éventuel si la lecture du profil échoue (ex. problème réseau)
   const [erreurProfil, setErreurProfil] = useState(null);
 
+  // État de la double authentification (uniquement pour un super_admin actif)
+  const [niveauAal, setNiveauAal] = useState(null);
+  const [aFacteurTotpVerifie, setAFacteurTotpVerifie] = useState(false);
+  const [facteurTotpId, setFacteurTotpId] = useState(null);
+  const [utilisateurMfaCharge, setUtilisateurMfaCharge] = useState(null);
+  const [erreurMfa, setErreurMfa] = useState(null);
+
   const utilisateurId = session?.user?.id ?? null;
+  const estSuperAdminActif = Boolean(
+    profil && profil.actif && profil.role === 'super_admin'
+  );
 
   // 1. Récupération de la session au démarrage et écoute des changements d'état
   useEffect(() => {
@@ -108,6 +164,11 @@ export function AuthProvider({ children }) {
         setSessionRecuperation(true);
       } else if (evenement === 'SIGNED_OUT') {
         setSessionRecuperation(false);
+        setNiveauAal(null);
+        setAFacteurTotpVerifie(false);
+        setFacteurTotpId(null);
+        setErreurMfa(null);
+        setUtilisateurMfaCharge(null);
       }
 
       setSession(nouvelleSession ?? null);
@@ -190,6 +251,89 @@ export function AuthProvider({ children }) {
     };
   }, [utilisateurId]);
 
+  // 3. Chargement de l'état MFA uniquement pour un super_admin actif
+  // Les gérants et employés ne déclenchent aucun appel MFA.
+  useEffect(() => {
+    let estActif = true;
+
+    async function chargerEtatMfa() {
+      if (!utilisateurId || !estSuperAdminActif) {
+        setNiveauAal(null);
+        setAFacteurTotpVerifie(false);
+        setFacteurTotpId(null);
+        setErreurMfa(null);
+        setUtilisateurMfaCharge(null);
+        return;
+      }
+
+      setErreurMfa(null);
+
+      try {
+        const etat = await lireEtatMfaServeur();
+        if (!estActif) {
+          return;
+        }
+        setNiveauAal(etat.niveau);
+        setAFacteurTotpVerifie(etat.verifie);
+        setFacteurTotpId(etat.totpId);
+        setErreurMfa(etat.erreur);
+      } catch {
+        if (!estActif) {
+          return;
+        }
+        setNiveauAal('aal1');
+        setAFacteurTotpVerifie(false);
+        setFacteurTotpId(null);
+        setErreurMfa(
+          'Erreur réseau lors de la vérification de votre double authentification.'
+        );
+      } finally {
+        if (estActif) {
+          setUtilisateurMfaCharge(utilisateurId);
+        }
+      }
+    }
+
+    chargerEtatMfa();
+
+    return () => {
+      estActif = false;
+    };
+  }, [utilisateurId, estSuperAdminActif]);
+
+  // Rafraîchit la session Supabase et l'état MFA dans AuthContext après une vérification TOTP
+  // afin que niveauAal passe immédiatement à 'aal2' avant la redirection vers /admin (pas de boucle).
+  const rafraichirMfa = useCallback(async () => {
+    let sessionFraiche = null;
+
+    const { data: dataRefresh, error: erreurRefresh } =
+      await supabase.auth.refreshSession();
+
+    if (!erreurRefresh && dataRefresh?.session) {
+      sessionFraiche = dataRefresh.session;
+    } else {
+      const { data: dataSession } = await supabase.auth.getSession();
+      sessionFraiche = dataSession?.session ?? null;
+    }
+
+    if (sessionFraiche) {
+      setSession(sessionFraiche);
+    }
+
+    const etat = await lireEtatMfaServeur();
+    const idCourant = sessionFraiche?.user?.id ?? utilisateurId;
+
+    setNiveauAal(etat.niveau);
+    setAFacteurTotpVerifie(etat.verifie);
+    setFacteurTotpId(etat.totpId);
+    setErreurMfa(etat.erreur);
+    if (idCourant) {
+      setUtilisateurMfaCharge(idCourant);
+    }
+
+    return etat;
+  }, [utilisateurId]);
+
   // Met à jour immédiatement l'objet utilisateur dans la session locale (ex. après updateUser)
   // afin d'éviter toute redirection en boucle avant l'arrivée de l'événement USER_UPDATED.
   function mettreAJourUtilisateur(utilisateurMisAJour) {
@@ -218,6 +362,11 @@ export function AuthProvider({ children }) {
     setErreurProfil(null);
     setUtilisateurProfilCharge(null);
     setSessionRecuperation(false);
+    setNiveauAal(null);
+    setAFacteurTotpVerifie(false);
+    setFacteurTotpId(null);
+    setErreurMfa(null);
+    setUtilisateurMfaCharge(null);
   }
 
   // Drapeau indiquant si l'utilisateur doit obligatoirement changer son mot de passe temporaire
@@ -225,10 +374,14 @@ export function AuthProvider({ children }) {
     session?.user?.user_metadata?.doit_changer_mdp === true;
 
   // On reste en chargement tant que la session n'est pas initialisée,
-  // ou tant qu'un utilisateur est connecté mais que son profil n'a pas encore été chargé.
+  // tant que le profil d'un utilisateur connecté n'a pas encore été chargé,
+  // ou tant que l'état MFA d'un super_admin actif n'a pas encore été vérifié.
   const chargement =
     !sessionInitialisee ||
-    (utilisateurId !== null && utilisateurProfilCharge !== utilisateurId);
+    (utilisateurId !== null && utilisateurProfilCharge !== utilisateurId) ||
+    (utilisateurId !== null &&
+      estSuperAdminActif &&
+      utilisateurMfaCharge !== utilisateurId);
 
   const valeur = {
     session,
@@ -238,6 +391,11 @@ export function AuthProvider({ children }) {
     erreurProfil,
     doitChangerMdp,
     sessionRecuperation,
+    niveauAal,
+    aFacteurTotpVerifie,
+    facteurTotpId,
+    erreurMfa,
+    rafraichirMfa,
     mettreAJourUtilisateur,
     deconnexion,
   };
