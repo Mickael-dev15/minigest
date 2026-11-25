@@ -1,6 +1,22 @@
 // Fonctions pures de calcul, validation et formatage pour le tableau de bord Super admin (/admin).
 // Aucune fonction de ce fichier ne modifie les tableaux ou objets reçus en paramètre.
 
+// Liste des pays proposés pour les entreprises (création et modification)
+export const PAYS = [
+  'Sénégal',
+  "Côte d'Ivoire",
+  'Cameroun',
+  'Mali',
+  'Burkina Faso',
+  'Bénin',
+  'Togo',
+  'Guinée',
+  'Niger',
+  'Gabon',
+  'Congo',
+  'Autre',
+];
+
 // Liste des statuts de paiement autorisés par la base (contrainte CHECK sur public.abonnements)
 export const STATUTS_PAIEMENT = [
   { valeur: 'paye', libelle: 'Payé', cleCss: 'paye' },
@@ -36,6 +52,7 @@ const MS_PAR_JOUR = 86_400_000;
 // Libellés lisibles pour les actions enregistrées dans public.journal
 export const LIBELLES_ACTION_JOURNAL = {
   creation_entreprise: 'Création entreprise',
+  modification_entreprise: 'Modification entreprise',
   suspension_entreprise: 'Suspension entreprise',
   reactivation_entreprise: 'Réactivation entreprise',
   creation_abonnement: 'Ajout abonnement',
@@ -428,6 +445,65 @@ export function formaterBadgeEcheance(analyseEcheance) {
   return null;
 }
 
+// Construit la liste ordonnée des badges à afficher pour l'abonnement en cours (/admin).
+// Si l'abonnement est expiré ET non payé (sans renouvellement prévu), renvoie un seul
+// badge rouge "Expiré – non payé" à la place de "En attente (échu)" / "En retard" + "Expiré".
+export function construireBadgesAbonnement(
+  analyseEcheance,
+  dateReference = new Date()
+) {
+  const abonnementEnCours = analyseEcheance?.abonnementEnCours;
+  if (!abonnementEnCours) {
+    return [];
+  }
+
+  const statutPaiement = abonnementEnCours.statut_paiement;
+  const estExpire = analyseEcheance.etat === 'expire';
+  const estNonPaye = statutPaiement !== 'paye';
+
+  if (estExpire && estNonPaye) {
+    return [
+      {
+        cle: 'expire-non-paye',
+        classeCss: 'badge-echeance-expire',
+        libelle: 'Expiré – non payé',
+      },
+    ];
+  }
+
+  const badges = [];
+  const enRetard = estAbonnementEnRetard(abonnementEnCours, dateReference);
+  const classeBadgePaiement =
+    statutPaiement === 'paye'
+      ? 'badge-paiement-paye'
+      : statutPaiement === 'en_retard' || enRetard
+        ? 'badge-paiement-retard'
+        : 'badge-paiement-attente';
+
+  const libelleBase = LIBELLES_STATUT_PAIEMENT[statutPaiement] ?? statutPaiement;
+  const libellePaiement =
+    statutPaiement === 'en_attente' && enRetard
+      ? `${libelleBase} (échu)`
+      : libelleBase;
+
+  badges.push({
+    cle: 'paiement',
+    classeCss: classeBadgePaiement,
+    libelle: libellePaiement,
+  });
+
+  const badgeEcheance = formaterBadgeEcheance(analyseEcheance);
+  if (badgeEcheance) {
+    badges.push({
+      cle: `echeance-${badgeEcheance.type}`,
+      classeCss: `badge-echeance-${badgeEcheance.type}`,
+      libelle: badgeEcheance.libelle,
+    });
+  }
+
+  return badges;
+}
+
 // Indique si une entreprise doit apparaître dans le filtre "À surveiller" sur /admin :
 // abonnement en retard de paiement OU échéance expirée / proche (sans renouvellement déjà prévu).
 export function estEntrepriseASurveiller(
@@ -537,7 +613,7 @@ export function calculerIndicateursAdmin(
   };
 }
 
-// Valide les champs du formulaire de création d'entreprise
+// Valide les champs du formulaire de création ou modification d'entreprise
 export function validerEntreprise(donnees) {
   const nom = String(donnees?.nom ?? '').trim();
   const ville = String(donnees?.ville ?? '').trim();
@@ -556,6 +632,30 @@ export function validerEntreprise(donnees) {
       pays: pays === '' ? null : pays,
     },
   };
+}
+
+// Compare les champs éditables d'une entreprise (nom, ville, pays uniquement) et renvoie
+// un objet contenant uniquement les champs réellement modifiés : { champ: { avant, apres } }.
+export function calculerChangementsEntreprise(
+  entrepriseExistante,
+  donneesPropres
+) {
+  const champsEditables = ['nom', 'ville', 'pays'];
+  const changements = {};
+
+  for (const champ of champsEditables) {
+    const valeurAvant = String(entrepriseExistante?.[champ] ?? '').trim() || null;
+    const valeurApres = String(donneesPropres?.[champ] ?? '').trim() || null;
+
+    if (valeurAvant !== valeurApres) {
+      changements[champ] = {
+        avant: valeurAvant,
+        apres: valeurApres,
+      };
+    }
+  }
+
+  return changements;
 }
 
 // Valide le motif de suspension obligatoire
@@ -766,6 +866,12 @@ export function regrouperProfilsParEntreprise(profils, entreprises) {
   return groupes;
 }
 
+const LIBELLES_CHAMP_ENTREPRISE = {
+  nom: 'Nom',
+  ville: 'Ville',
+  pays: 'Pays',
+};
+
 // Formate les détails JSON d'une entrée du journal en un résumé lisible en français
 export function formaterDetailsJournal(details) {
   if (!details || typeof details !== 'object') {
@@ -773,6 +879,18 @@ export function formaterDetailsJournal(details) {
   }
 
   const segments = [];
+
+  if (details.changements && typeof details.changements === 'object') {
+    for (const [champ, diff] of Object.entries(details.changements)) {
+      if (!diff || typeof diff !== 'object') {
+        continue;
+      }
+      const libelleChamp = LIBELLES_CHAMP_ENTREPRISE[champ] ?? champ;
+      const avant = diff.avant ?? '—';
+      const apres = diff.apres ?? '—';
+      segments.push(`${libelleChamp} : ${avant} → ${apres}`);
+    }
+  }
 
   if (details.entreprise_nom) {
     segments.push(`Entreprise : ${details.entreprise_nom}`);

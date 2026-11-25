@@ -13,8 +13,8 @@ function JournalSection({ entrees }) {
       {entrees.length === 0 ? (
         <p className="empty-text">Aucune action enregistrée pour le moment.</p>
       ) : (
-        <div className="table-wrapper">
-          <table className="client-table">
+        <div className="table-wrapper journal-table-wrapper">
+          <table className="client-table journal-table">
             <thead>
               <tr>
                 <th>Date</th>

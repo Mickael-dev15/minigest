@@ -100,12 +100,16 @@ function Admin() {
   const [avertissementJournal, setAvertissementJournal] = useState('');
   const [erreurAction, setErreurAction] = useState('');
   const [erreurCreation, setErreurCreation] = useState('');
+  const [erreurModificationEntreprise, setErreurModificationEntreprise] =
+    useState('');
   const [erreurAbonnement, setErreurAbonnement] = useState('');
   const [erreurCreationUtilisateur, setErreurCreationUtilisateur] =
     useState('');
 
   // États "en cours" pour désactiver les boutons et éviter les doubles clics
   const [creationEnCours, setCreationEnCours] = useState(false);
+  const [modificationEntrepriseEnCours, setModificationEntrepriseEnCours] =
+    useState(false);
   const [actionEntrepriseId, setActionEntrepriseId] = useState(null);
   const [enregistrementAbonnement, setEnregistrementAbonnement] =
     useState(false);
@@ -116,6 +120,9 @@ function Admin() {
   // Entreprise actuellement ouverte dans le panneau Abonnements (null si fermé)
   const [entrepriseSelectionneeId, setEntrepriseSelectionneeId] =
     useState(null);
+
+  // Entreprise actuellement en cours de modification (nom, ville, pays uniquement)
+  const [entrepriseEnEditionId, setEntrepriseEnEditionId] = useState(null);
 
   // Charge les 5 sources de données en parallèle (sans jamais lire public.clients)
   const recupererDonneesAdmin = useCallback(async () => {
@@ -269,6 +276,7 @@ function Admin() {
     setAvertissementJournal('');
     setErreurAction('');
     setErreurCreation('');
+    setErreurModificationEntreprise('');
     setErreurAbonnement('');
     setErreurCreationUtilisateur('');
   }
@@ -332,6 +340,82 @@ function Admin() {
       return false;
     } finally {
       setCreationEnCours(false);
+    }
+  }
+
+  // 1b. Modification des coordonnées d'une entreprise (nom, ville, pays uniquement ; jamais statut)
+  async function modifierEntreprise(entreprise, donneesPropres, changements) {
+    if (
+      !superAdminPret ||
+      modificationEntrepriseEnCours ||
+      actionEntrepriseId !== null ||
+      !changements ||
+      Object.keys(changements).length === 0
+    ) {
+      return false;
+    }
+
+    reinitialiserMessages();
+    setModificationEntrepriseEnCours(true);
+    setActionEntrepriseId(entreprise.id);
+
+    try {
+      const { data, error } = await supabase
+        .from('entreprises')
+        .update({
+          nom: donneesPropres.nom,
+          ville: donneesPropres.ville,
+          pays: donneesPropres.pays,
+        })
+        .eq('id', entreprise.id)
+        .select(COLONNES_ENTREPRISE);
+
+      if (error) {
+        setErreurModificationEntreprise(
+          traduireErreurAdmin(
+            error,
+            "Impossible de modifier l'entreprise. Veuillez réessayer."
+          )
+        );
+        return false;
+      }
+
+      if (!data || data.length === 0) {
+        setErreurModificationEntreprise('Action non autorisée');
+        return false;
+      }
+
+      const entrepriseMiseAJour = data[0];
+      setEntreprises((listeActuelle) =>
+        listeActuelle.map((item) =>
+          item.id === entrepriseMiseAJour.id ? entrepriseMiseAJour : item
+        )
+      );
+
+      // Le journal n'enregistre que les champs réellement modifiés (avant / après)
+      await enregistrerDansJournal(
+        'modification_entreprise',
+        entrepriseMiseAJour.nom,
+        {
+          entreprise_id: entrepriseMiseAJour.id,
+          changements,
+        }
+      );
+
+      await rechargerDonneesSilencieusement();
+      setEntrepriseEnEditionId(null);
+      setMessageSucces(
+        `Entreprise « ${entrepriseMiseAJour.nom} » modifiée avec succès.`
+      );
+      return true;
+    } catch {
+      setErreurModificationEntreprise(
+        "Erreur réseau lors de la modification de l'entreprise. Vérifiez votre connexion."
+      );
+      return false;
+    } finally {
+      setModificationEntrepriseEnCours(false);
+      setActionEntrepriseId(null);
     }
   }
 
@@ -757,6 +841,25 @@ function Admin() {
     }
   }
 
+  // Ouvre le formulaire d'édition pour une entreprise et fait défiler jusqu'à lui
+  function ouvrirEditionEntreprise(entreprise) {
+    setErreurCreation('');
+    setErreurModificationEntreprise('');
+    setEntrepriseEnEditionId(entreprise.id);
+
+    setTimeout(() => {
+      const section = document.getElementById('form-entreprise');
+      if (section) {
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 0);
+  }
+
+  function annulerEditionEntreprise() {
+    setEntrepriseEnEditionId(null);
+    setErreurModificationEntreprise('');
+  }
+
   // Ouvre la section Abonnements de l'entreprise cliquée et fait défiler jusqu'à elle
   function ouvrirAbonnements(entreprise) {
     setErreurAbonnement('');
@@ -781,6 +884,8 @@ function Admin() {
     regrouperAbonnementsParEntreprise(abonnements);
   const entrepriseSelectionnee =
     entreprises.find((e) => e.id === entrepriseSelectionneeId) ?? null;
+  const entrepriseEnEdition =
+    entreprises.find((e) => e.id === entrepriseEnEditionId) ?? null;
   const abonnementsEntrepriseSelectionnee = entrepriseSelectionnee
     ? (abonnementsParEntreprise[entrepriseSelectionnee.id] ?? [])
     : [];
@@ -852,19 +957,33 @@ function Admin() {
           {/* 1. Indicateurs clés en haut */}
           <AdminKpis indicateurs={indicateurs} />
 
-          {/* 2. Formulaire de création d'entreprise */}
+          {/* 2. Formulaire de création / modification d'entreprise */}
           <EntrepriseForm
+            key={entrepriseEnEdition?.id ?? 'creation'}
+            entrepriseEnEdition={entrepriseEnEdition}
             onCreerEntreprise={creerEntreprise}
-            enCours={creationEnCours}
-            erreurServeur={erreurCreation}
+            onModifierEntreprise={modifierEntreprise}
+            onAnnulerEdition={annulerEditionEntreprise}
+            enCours={
+              entrepriseEnEdition
+                ? modificationEntrepriseEnCours
+                : creationEnCours
+            }
+            erreurServeur={
+              entrepriseEnEdition
+                ? erreurModificationEntreprise
+                : erreurCreation
+            }
           />
 
-          {/* 3. Tableau des entreprises + suspension / réactivation */}
+          {/* 3. Tableau des entreprises + modification / suspension / réactivation */}
           <EntreprisesTable
             entreprises={entreprises}
             carteNbClients={carteNbClients}
             abonnementsParEntreprise={abonnementsParEntreprise}
             entrepriseSelectionneeId={entrepriseSelectionneeId}
+            entrepriseEnEditionId={entrepriseEnEditionId}
+            onModifierEntreprise={ouvrirEditionEntreprise}
             onSelectionnerAbonnements={ouvrirAbonnements}
             onSuspendreEntreprise={suspendreEntreprise}
             onReactiverEntreprise={reactiverEntreprise}

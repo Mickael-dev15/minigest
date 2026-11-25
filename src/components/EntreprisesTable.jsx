@@ -3,11 +3,9 @@
 // Aucune suppression d'entreprise n'est proposée.
 import { useState } from 'react';
 import {
-  LIBELLES_STATUT_PAIEMENT,
   analyserEcheanceEntreprise,
-  estAbonnementEnRetard,
+  construireBadgesAbonnement,
   estEntrepriseASurveiller,
-  formaterBadgeEcheance,
   formaterDateFr,
   obtenirNbClientsEntreprise,
   validerMotifSuspension,
@@ -18,6 +16,8 @@ function EntreprisesTable({
   carteNbClients,
   abonnementsParEntreprise,
   entrepriseSelectionneeId,
+  entrepriseEnEditionId,
+  onModifierEntreprise,
   onSelectionnerAbonnements,
   onSuspendreEntreprise,
   onReactiverEntreprise,
@@ -207,26 +207,20 @@ function EntreprisesTable({
                   abonnementsEntreprise
                 );
                 const { abonnementEnCours } = analyseEcheance;
-                const badgeEcheance = formaterBadgeEcheance(analyseEcheance);
-                const enRetard = estAbonnementEnRetard(abonnementEnCours);
+                const badgesAbonnement =
+                  construireBadgesAbonnement(analyseEcheance);
                 const estSelectionnee =
                   entreprise.id === entrepriseSelectionneeId;
+                const estEnEdition = entreprise.id === entrepriseEnEditionId;
                 const actionSurCetteLigne = actionEnCoursId === entreprise.id;
                 const uneActionEstEnCours = actionEnCoursId !== null;
-
-                const classeBadgePaiement = abonnementEnCours
-                  ? abonnementEnCours.statut_paiement === 'paye'
-                    ? 'badge-paiement-paye'
-                    : abonnementEnCours.statut_paiement === 'en_retard' ||
-                        enRetard
-                      ? 'badge-paiement-retard'
-                      : 'badge-paiement-attente'
-                  : '';
 
                 return (
                   <tr
                     key={entreprise.id}
-                    className={estSelectionnee ? 'row-editing' : ''}
+                    className={
+                      estSelectionnee || estEnEdition ? 'row-editing' : ''
+                    }
                   >
                     <td data-label="Nom">
                       <strong>{entreprise.nom}</strong>
@@ -274,30 +268,34 @@ function EntreprisesTable({
                           <span className="abo-echeance">
                             Fin : {formaterDateFr(abonnementEnCours.date_fin)}
                           </span>
-                          <span
-                            className={`badge-statut ${classeBadgePaiement}`}
-                          >
-                            {LIBELLES_STATUT_PAIEMENT[
-                              abonnementEnCours.statut_paiement
-                            ] ?? abonnementEnCours.statut_paiement}
-                            {abonnementEnCours.statut_paiement ===
-                              'en_attente' && enRetard
-                              ? ' (échu)'
-                              : ''}
-                          </span>
-                          {badgeEcheance && (
+                          {badgesAbonnement.map((badge) => (
                             <span
-                              className={`badge-statut badge-echeance-${badgeEcheance.type}`}
+                              key={badge.cle}
+                              className={`badge-statut ${badge.classeCss}`}
                             >
-                              {badgeEcheance.libelle}
+                              {badge.libelle}
                             </span>
-                          )}
+                          ))}
                         </div>
                       )}
                     </td>
 
                     <td data-label="Actions">
                       <div className="action-buttons admin-action-buttons">
+                        <button
+                          type="button"
+                          className="btn-edit"
+                          onClick={() => {
+                            if (entrepriseASuspendre) {
+                              fermerConfirmationSuspension();
+                            }
+                            onModifierEntreprise(entreprise);
+                          }}
+                          disabled={uneActionEstEnCours}
+                        >
+                          {estEnEdition ? 'Modifier (en cours)' : 'Modifier'}
+                        </button>
+
                         <button
                           type="button"
                           className="btn-edit"

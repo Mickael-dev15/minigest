@@ -1,18 +1,43 @@
-// Formulaire de création d'une nouvelle entreprise (nom obligatoire, ville, pays).
+// Formulaire de création et de modification d'une entreprise
+// (nom obligatoire, ville et pays facultatifs ; le statut n'est jamais modifié ici).
 import { useState } from 'react';
-import { validerEntreprise } from '../utils/admin.js';
+import {
+  PAYS,
+  calculerChangementsEntreprise,
+  validerEntreprise,
+} from '../utils/admin.js';
 
-function EntrepriseForm({ onCreerEntreprise, enCours, erreurServeur }) {
-  const [nom, setNom] = useState('');
-  const [ville, setVille] = useState('');
-  const [pays, setPays] = useState('');
+function EntrepriseForm({
+  entrepriseEnEdition = null,
+  onCreerEntreprise,
+  onModifierEntreprise,
+  onAnnulerEdition,
+  enCours,
+  erreurServeur,
+}) {
+  const estEdition = Boolean(entrepriseEnEdition);
+  const [nom, setNom] = useState(() => entrepriseEnEdition?.nom ?? '');
+  const [ville, setVille] = useState(() => entrepriseEnEdition?.ville ?? '');
+  const [pays, setPays] = useState(() => entrepriseEnEdition?.pays ?? '');
   const [erreurs, setErreurs] = useState({});
+  const [messageInfo, setMessageInfo] = useState('');
+
+  // Si une entreprise existante possède déjà une valeur libre hors liste PAYS,
+  // on la conserve dans les options pour éviter de l'écraser involontairement.
+  const paysActuelHorsListe =
+    estEdition &&
+    entrepriseEnEdition.pays &&
+    !PAYS.includes(entrepriseEnEdition.pays)
+      ? entrepriseEnEdition.pays
+      : '';
 
   async function gererSoumission(evenement) {
     evenement.preventDefault();
     if (enCours) {
       return;
     }
+
+    setMessageInfo('');
 
     const { erreurs: erreursValidation, donneesPropres } = validerEntreprise({
       nom,
@@ -26,6 +51,26 @@ function EntrepriseForm({ onCreerEntreprise, enCours, erreurServeur }) {
     }
 
     setErreurs({});
+
+    if (estEdition) {
+      const changements = calculerChangementsEntreprise(
+        entrepriseEnEdition,
+        donneesPropres
+      );
+
+      if (Object.keys(changements).length === 0) {
+        setMessageInfo('Aucune modification');
+        return;
+      }
+
+      await onModifierEntreprise(
+        entrepriseEnEdition,
+        donneesPropres,
+        changements
+      );
+      return;
+    }
+
     const reussite = await onCreerEntreprise(donneesPropres);
     if (reussite) {
       setNom('');
@@ -35,8 +80,18 @@ function EntrepriseForm({ onCreerEntreprise, enCours, erreurServeur }) {
   }
 
   return (
-    <section className="card" aria-label="Créer une entreprise">
-      <h2>Nouvelle entreprise</h2>
+    <section
+      id="form-entreprise"
+      className={estEdition ? 'card card-editing' : 'card'}
+      aria-label={
+        estEdition ? "Modifier l'entreprise" : 'Créer une entreprise'
+      }
+    >
+      <h2>
+        {estEdition
+          ? `Modifier l'entreprise — ${entrepriseEnEdition.nom}`
+          : 'Nouvelle entreprise'}
+      </h2>
 
       <form className="client-form" onSubmit={gererSoumission} noValidate>
         <div className="form-grid">
@@ -53,6 +108,9 @@ function EntrepriseForm({ onCreerEntreprise, enCours, erreurServeur }) {
                 if (erreurs.nom) {
                   setErreurs((precedent) => ({ ...precedent, nom: '' }));
                 }
+                if (messageInfo) {
+                  setMessageInfo('');
+                }
               }}
               placeholder="Ex. Boutique Dakar"
               className={erreurs.nom ? 'input-error' : ''}
@@ -68,7 +126,12 @@ function EntrepriseForm({ onCreerEntreprise, enCours, erreurServeur }) {
               id="entreprise-ville"
               type="text"
               value={ville}
-              onChange={(e) => setVille(e.target.value)}
+              onChange={(e) => {
+                setVille(e.target.value);
+                if (messageInfo) {
+                  setMessageInfo('');
+                }
+              }}
               placeholder="Ex. Dakar"
               disabled={enCours}
             />
@@ -76,16 +139,37 @@ function EntrepriseForm({ onCreerEntreprise, enCours, erreurServeur }) {
 
           <div className="form-group">
             <label htmlFor="entreprise-pays">Pays</label>
-            <input
+            <select
               id="entreprise-pays"
-              type="text"
               value={pays}
-              onChange={(e) => setPays(e.target.value)}
-              placeholder="Ex. Sénégal"
+              onChange={(e) => {
+                setPays(e.target.value);
+                if (messageInfo) {
+                  setMessageInfo('');
+                }
+              }}
               disabled={enCours}
-            />
+            >
+              <option value="">— Choisir un pays —</option>
+              {paysActuelHorsListe && (
+                <option value={paysActuelHorsListe}>
+                  {paysActuelHorsListe} (valeur actuelle)
+                </option>
+              )}
+              {PAYS.map((nomPays) => (
+                <option key={nomPays} value={nomPays}>
+                  {nomPays}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
+
+        {messageInfo && (
+          <p className="field-info-message" role="status" aria-live="polite">
+            {messageInfo}
+          </p>
+        )}
 
         {erreurServeur && (
           <p className="error-message" role="alert">
@@ -95,8 +179,25 @@ function EntrepriseForm({ onCreerEntreprise, enCours, erreurServeur }) {
 
         <div className="form-actions">
           <button type="submit" className="btn-primary" disabled={enCours}>
-            {enCours ? 'Création en cours...' : "Créer l'entreprise"}
+            {enCours
+              ? estEdition
+                ? 'Enregistrement...'
+                : 'Création en cours...'
+              : estEdition
+                ? 'Enregistrer les modifications'
+                : "Créer l'entreprise"}
           </button>
+
+          {estEdition && (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={onAnnulerEdition}
+              disabled={enCours}
+            >
+              Annuler
+            </button>
+          )}
         </div>
       </form>
     </section>

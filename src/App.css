@@ -1769,6 +1769,17 @@ body {
 }
 
 /* Cellules spécifiques du tableau entreprises et du journal */
+.admin-action-buttons {
+  flex-wrap: wrap;
+}
+
+.field-info-message {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #475569;
+}
+
 .cell-statut-entreprise {
   white-space: normal;
 }
@@ -1805,11 +1816,24 @@ body {
   color: #475569;
 }
 
-.cell-journal-details {
+/* Journal "Dernières actions" : passage à la ligne sur Détails sans défilement horizontal */
+.client-table.journal-table {
+  width: 100%;
+}
+
+.client-table.journal-table td.cell-journal-details {
   white-space: normal;
+  overflow-wrap: anywhere;
   word-break: break-word;
-  max-width: 420px;
+  max-width: none;
   line-height: 1.4;
+}
+
+@media (max-width: 960px) {
+  .client-table.journal-table td {
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
 }
 
 /* Panneau Abonnements : espacements sous-tableau et sous-formulaire */
@@ -1974,10 +1998,20 @@ body {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .entreprise-motif,
-  .cell-journal-details {
+  .entreprise-motif {
     max-width: none;
     text-align: right;
+  }
+
+  .client-table.journal-table td {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .client-table.journal-table td.cell-journal-details {
+    max-width: none;
+    text-align: left;
   }
 
   .abo-resume {
